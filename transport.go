@@ -110,7 +110,7 @@ type netTransportConfig struct {
 type netTransport struct {
 	config   *netTransportConfig
 	logger   hclog.Logger
-	shutdown *shutdown
+	shutdown *ProtectedChan
 	connPool map[string][]*peerConn
 	poolL    sync.Mutex
 	// seems no need for context, just use shutdownCh
@@ -150,7 +150,7 @@ func newNetTransport(config *netTransportConfig, logger hclog.Logger) (*netTrans
 	return &netTransport{
 		config:      config,
 		logger:      logger,
-		shutdown:    newShutdown(),
+		shutdown:    newProtectedChan(),
 		connPool:    map[string][]*peerConn{},
 		listener:    l,
 		heartbeatCh: make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
@@ -175,10 +175,10 @@ func (t *netTransport) RpcCh() chan *RPC {
 }
 
 func (t *netTransport) Close() {
-	if t.shutdown.Done() {
+	if t.shutdown.IsClosed() {
 		return
 	}
-	t.shutdown.Shutdown()
+	t.shutdown.Close()
 	t.listener.Close()
 	t.poolL.Lock()
 	defer t.poolL.Unlock()
@@ -236,7 +236,7 @@ func (t *netTransport) returnConn(conn *peerConn) {
 	addr := conn.addr
 	conns := t.connPool[addr]
 
-	if t.shutdown.Done() || len(conns) == t.config.PoolSize {
+	if t.shutdown.IsClosed() || len(conns) == t.config.PoolSize {
 		conn.Close()
 		return
 	}

@@ -8,34 +8,43 @@ import (
 	"github.com/hashicorp/go-msgpack/codec"
 )
 
-type shutdown struct {
-	done bool
-	ch   chan struct{}
-	l    sync.Mutex
+type ProtectedChan struct {
+	closed bool
+	ch     chan struct{}
+	l      sync.Mutex
 }
 
-func (s *shutdown) Shutdown() {
-	s.l.Lock()
-	defer s.l.Unlock()
-	if s.done {
+func (p *ProtectedChan) Close() {
+	p.l.Lock()
+	defer p.l.Unlock()
+	if p.closed {
 		return
 	}
-	s.done = true
-	close(s.ch)
+	p.closed = true
+	close(p.ch)
 }
 
-func (s *shutdown) Done() bool {
-	s.l.Lock()
-	defer s.l.Unlock()
-	return s.done
+func (p *ProtectedChan) IsClosed() bool {
+	p.l.Lock()
+	defer p.l.Unlock()
+	return p.closed
 }
 
-func (s *shutdown) Ch() chan struct{} {
-	return s.ch
+func (p *ProtectedChan) Ch() chan struct{} {
+	p.l.Lock()
+	defer p.l.Unlock()
+	return p.ch
 }
 
-func newShutdown() *shutdown {
-	return &shutdown{
+func (p *ProtectedChan) Reset() {
+	p.l.Lock()
+	defer p.l.Unlock()
+	p.closed = false
+	p.ch = make(chan struct{})
+}
+
+func newProtectedChan() *ProtectedChan {
+	return &ProtectedChan{
 		ch: make(chan struct{}),
 	}
 }
@@ -66,4 +75,11 @@ func toBytes(u uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, u)
 	return buf
+}
+
+func tryNotify(ch chan struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
 }
