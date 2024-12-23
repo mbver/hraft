@@ -1,3 +1,5 @@
 package hraft
 
-type Log struct{}
+type Log struct {
+	Idx uint64
+}

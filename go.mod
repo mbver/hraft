@@ -3,6 +3,7 @@ module github.com/mbver/hraft
 go 1.23.2
 
 require (
+	github.com/boltdb/bolt v1.3.1
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-msgpack v0.5.5
 )
