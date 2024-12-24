@@ -18,4 +18,4 @@ func (f *Follower) HandleRPC(rpc *RPC) {}
 
 func (f *Follower) HandleApply(a *Apply) {}
 
-func (f *Follower) HandleCommitNotify()
+func (f *Follower) HandleCommitNotify() {}

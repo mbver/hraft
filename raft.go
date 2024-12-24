@@ -2,7 +2,6 @@ package hraft
 
 import (
 	"errors"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -163,8 +162,7 @@ func (r *Raft) receiveHeartbeat() {
 	for {
 		select {
 		case req := <-r.heartbeatCh:
-			fmt.Println(req)
-			// TODO: handle append entries request
+			r.getState().HandleRPC(req)
 		case <-r.ShutdownCh():
 			return
 		}
@@ -208,5 +206,14 @@ func (r *Raft) getResetHeartbeatTimeout() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (r *Raft) receiveMutations() {
+	select {
+	case commits := <-r.appstate.mutateCh:
+		r.appstate.state.Apply(commits)
+	case <-r.ShutdownCh():
+		return
 	}
 }
