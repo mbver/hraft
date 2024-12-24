@@ -124,7 +124,7 @@ func (l *Leader) Stepdown() {
 
 func (l *Leader) HandleNewCommit() {
 	commitIdx := l.commit.getCommitIdx()
-	l.raft.setCommitIdx(commitIdx)
+	l.raft.instate.setCommitIdx(commitIdx)
 	l.processNewCommit(commitIdx)
 }
 

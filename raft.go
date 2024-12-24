@@ -1,9 +1,14 @@
 package hraft
 
 import (
+	"errors"
 	"sync/atomic"
 
 	hclog "github.com/hashicorp/go-hclog"
+)
+
+var (
+	ErrRaftShutdown = errors.New("raft is shutdown")
 )
 
 type RaftStateType uint32
@@ -47,6 +52,7 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 type Raft struct {
 	config   *Config
 	logger   hclog.Logger
+	appstate *AppState
 	instate  *internalState
 	state    RaftStateType
 	stateMap map[RaftStateType]State
@@ -92,12 +98,6 @@ func (r *Raft) NumNodes() int {
 	return 0
 }
 
-func (r *Raft) getCommitIdx() uint64 {
-	return 0
-}
-
-func (r *Raft) setCommitIdx(idx uint64) {}
-
 type Commit struct {
 	Log   *Log
 	ErrCh chan error
@@ -129,4 +129,12 @@ func (r *Raft) processNewLeaderCommit(idx uint64) {
 	r.instate.setLastApplied(idx)
 }
 
-func (r *Raft) applyCommits(commits []*Commit) {}
+func (r *Raft) applyCommits(commits []*Commit) {
+	select {
+	case r.appstate.mutateCh <- commits:
+	case <-r.shutdown.Ch():
+		for _, c := range commits {
+			trySendErr(c.ErrCh, ErrRaftShutdown)
+		}
+	}
+}
