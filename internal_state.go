@@ -54,6 +54,12 @@ func (in *internalState) getLastIdx() uint64 {
 	return max(in.lastLogIdx, in.lastSnapshotIdx) // ?????
 }
 
+func (in *internalState) getLastLog() (uint64, uint64) {
+	in.l.Lock()
+	defer in.l.Unlock()
+	return in.lastLogIdx, in.lastLogTerm
+}
+
 func (in *internalState) setLastLog(idx, term uint64) {
 	in.l.Lock()
 	defer in.l.Unlock()

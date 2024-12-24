@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"sync"
+	"time"
+
+	"math/rand"
 
 	"github.com/hashicorp/go-msgpack/codec"
 )
@@ -97,4 +100,12 @@ func trySendErr(ch chan error, err error) {
 	case ch <- err:
 	default:
 	}
+}
+
+func jitter(interval time.Duration) time.Duration {
+	if interval == 0 {
+		return 0
+	}
+	j := time.Duration(rand.Int63()) % interval
+	return j + interval
 }

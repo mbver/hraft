@@ -117,6 +117,10 @@ func (r *Raft) NumNodes() int {
 	return 0
 }
 
+func (r *Raft) Peers() []string {
+	return []string{}
+}
+
 type Commit struct {
 	Log   *Log
 	ErrCh chan error

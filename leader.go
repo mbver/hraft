@@ -54,8 +54,90 @@ func (c *commitControl) updateCommitIdx() {
 }
 
 type peerReplication struct {
-	notifyCh chan struct{}
+	// currentTerm is the term of this leader, to be included in AppendEntries
+	// requests.
+	currentTerm uint64
+	// nextIndex is the index of the next log entry to send to the follower,
+	nextIdx uint64
+	// peer's address
+	addr string
+	// update matchIdx
+	updateMatchIdx func(string, uint64)
+	// reference to the leader's Raft
+	raft *Raft
+	// logAddedCh is notified every time new entries are appended to the log.
+	logAddedCh chan struct{}
+	// stepDownCh fires when leader steps down
+	stepdownCh chan struct{}
+	// stopCh fires when the follower is removed from cluster
+	stopCh chan struct{}
 }
+
+func (l *Leader) startReplication() {
+	lastIdx := l.raft.instate.getLastIdx()
+	l.l.Lock()
+	defer l.l.Unlock()
+	for _, p := range l.raft.Peers() {
+		if p == l.raft.ID() {
+			continue
+		}
+		l.raft.logger.Info("added peer, starting replication", "peer", p)
+		r := &peerReplication{
+			raft:           l.raft,
+			addr:           p,
+			updateMatchIdx: l.commit.updateMatchIdx,
+			logAddedCh:     make(chan struct{}, 1),
+			currentTerm:    l.raft.instate.getTerm(),
+			nextIdx:        lastIdx + 1,
+			stepdownCh:     l.stepdown.Ch(),
+		}
+
+		l.replicationMap[p] = r
+		go r.run()
+		tryNotify(r.logAddedCh)
+	}
+}
+
+func (l *Leader) stopPeerReplication(addr string) {
+	l.l.Lock()
+	defer l.l.Unlock()
+	r, ok := l.replicationMap[addr]
+	if !ok {
+		return
+	}
+	close(r.stopCh)
+	delete(l.replicationMap, addr)
+}
+
+func (r *peerReplication) run() {
+	// Start an async heartbeating routing
+	stopHeartbeatCh := make(chan struct{})
+	defer close(stopHeartbeatCh)
+	go r.heartbeat(stopHeartbeatCh)
+	shouldStop := false
+	for !shouldStop {
+		select {
+		case <-r.stopCh:
+			lastLogIdx, _ := r.raft.instate.getLastLog()
+			r.replicateTo(lastLogIdx)
+			return
+		case <-r.stepdownCh:
+			return
+		case <-r.logAddedCh:
+			lastLogIdx, _ := r.raft.instate.getLastLog()
+			shouldStop = r.replicateTo(lastLogIdx)
+		case <-time.After(jitter(r.raft.config.CommitSyncInterval)):
+			lastLogIdx, _ := r.raft.instate.getLastLog()
+			shouldStop = r.replicateTo(lastLogIdx)
+		}
+	}
+}
+
+func (r *peerReplication) replicateTo(lastIdx uint64) (shouldStop bool) {
+	return false
+}
+
+func (r *peerReplication) heartbeat(stopCh chan struct{}) {}
 
 type Leader struct {
 	l              sync.Mutex
@@ -70,8 +152,9 @@ type Leader struct {
 
 func NewLeader(r *Raft) *Leader {
 	l := &Leader{
-		raft:     r,
-		stepdown: newResetableProtectedChan(),
+		raft:           r,
+		replicationMap: map[string]*peerReplication{},
+		stepdown:       newResetableProtectedChan(),
 	}
 	l.stepdown.Close()
 	return l
@@ -119,6 +202,7 @@ func (l *Leader) Stepdown() {
 	l.active = false
 	l.stepdown.Close()
 	l.staleTermCh = nil
+	l.replicationMap = map[string]*peerReplication{}
 	// TODO: transition to follower
 }
 
@@ -211,7 +295,10 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	l.raft.instate.setLastLog(lastIndex, term)
 
 	// Notify the replicators of the new log
+	l.l.Lock()
 	for _, repl := range l.replicationMap {
-		tryNotify(repl.notifyCh)
+		tryNotify(repl.logAddedCh)
 	}
+	l.l.Unlock()
+
 }
