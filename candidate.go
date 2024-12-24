@@ -7,14 +7,14 @@ import (
 
 type Candidate struct {
 	raft   *Raft
-	cancel *ProtectedChan
+	cancel *ResetableProtectedChan
 }
 
 type Vote struct{}
 
 func NewCandidate(r *Raft) *Candidate {
 	return &Candidate{
-		cancel: newProtectedChan(),
+		cancel: newResetableProtectedChan(),
 		raft:   r,
 	}
 }

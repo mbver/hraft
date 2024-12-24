@@ -3,5 +3,6 @@ package hraft
 import "time"
 
 type Config struct {
-	ElectionTimeout time.Duration
+	ElectionTimeout  time.Duration
+	MaxAppendEntries int
 }

@@ -36,17 +36,25 @@ func (p *ProtectedChan) Ch() chan struct{} {
 	return p.ch
 }
 
-func (p *ProtectedChan) Reset() {
-	p.l.Lock()
-	defer p.l.Unlock()
-	p.closed = false
-	p.ch = make(chan struct{})
-}
-
 func newProtectedChan() *ProtectedChan {
 	return &ProtectedChan{
 		ch: make(chan struct{}),
 	}
+}
+
+type ResetableProtectedChan struct {
+	*ProtectedChan
+}
+
+func (r *ResetableProtectedChan) Reset() {
+	r.l.Lock()
+	defer r.l.Unlock()
+	r.closed = false
+	r.ch = make(chan struct{})
+}
+
+func newResetableProtectedChan() *ResetableProtectedChan {
+	return &ResetableProtectedChan{newProtectedChan()}
 }
 
 func decode(buf []byte, out interface{}) error {
@@ -80,6 +88,13 @@ func toBytes(u uint64) []byte {
 func tryNotify(ch chan struct{}) {
 	select {
 	case ch <- struct{}{}:
+	default:
+	}
+}
+
+func trySendErr(ch chan error, err error) {
+	select {
+	case ch <- err:
 	default:
 	}
 }

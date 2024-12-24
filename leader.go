@@ -1,11 +1,12 @@
 package hraft
 
 import (
+	"container/list"
 	"sort"
 	"sync"
+	"time"
 )
 
-type Commit struct{}
 type commitControl struct {
 	l              sync.Mutex
 	commitNotifyCh chan struct{}
@@ -52,19 +53,25 @@ func (c *commitControl) updateCommitIdx() {
 	}
 }
 
+type peerReplication struct {
+	notifyCh chan struct{}
+}
+
 type Leader struct {
-	l           sync.Mutex
-	raft        *Raft
-	active      bool
-	commit      *commitControl
-	stepdown    *ProtectedChan
-	staleTermCh chan struct{}
+	l              sync.Mutex
+	raft           *Raft
+	active         bool
+	commit         *commitControl
+	inflight       *list.List
+	replicationMap map[string]*peerReplication
+	stepdown       *ResetableProtectedChan
+	staleTermCh    chan struct{}
 }
 
 func NewLeader(r *Raft) *Leader {
 	l := &Leader{
 		raft:     r,
-		stepdown: newProtectedChan(),
+		stepdown: newResetableProtectedChan(),
 	}
 	l.stepdown.Close()
 	return l
@@ -93,7 +100,7 @@ func (l *Leader) receiveStaleTerm() {
 	for {
 		select {
 		case <-l.getStaleTermCh():
-			l.Stepdown()
+			// TRANSITION TO FOLLOWER, NOT STEPDOWN
 			return
 		case <-l.stepdown.Ch():
 			return
@@ -121,8 +128,78 @@ func (l *Leader) HandleNewCommit() {
 	l.processNewCommit(commitIdx)
 }
 
-func (l *Leader) processNewCommit(idx uint64) {}
+type Apply struct {
+	log          *Log
+	errCh        chan error
+	dispatchedAt time.Time
+}
 
-type Apply struct{}
+func (l *Leader) processNewCommit(idx uint64) {
+	first := l.inflight.Front() // this can be nil!
+	if first == nil {
+		l.raft.processNewLeaderCommit(idx)
+		return
+	}
+	firstIdx := first.Value.(*Apply).log.Idx
+	l.raft.processNewLeaderCommit(min(firstIdx-1, idx))
 
-func (l *Leader) dispatchLogs(applies []*Apply)
+	batchSize := l.raft.config.MaxAppendEntries
+	batch := make([]*Commit, 0, batchSize)
+
+	for e := first; e != nil; e = e.Next() {
+		a := e.Value.(*Apply)
+		if a.log.Idx > idx {
+			break
+		}
+		batch = append(batch, &Commit{a.log, a.errCh})
+		l.inflight.Remove(e)
+		if len(batch) == batchSize {
+			l.raft.applyCommits(batch)
+			batch = make([]*Commit, 0, batchSize)
+		}
+	}
+
+	if len(batch) > 0 {
+		l.raft.applyCommits(batch)
+	}
+
+	l.raft.instate.setLastApplied(idx)
+}
+
+func (l *Leader) dispatchApplies(applies []*Apply) {
+	now := time.Now()
+	term := l.raft.instate.getTerm()
+	lastIndex := l.raft.instate.getLastIdx() // ???
+
+	n := len(applies)
+	logs := make([]*Log, n)
+
+	for idx, a := range applies {
+		a.dispatchedAt = now     // DO WE NEED THIS?
+		a.log.DispatchedAt = now // CONSIDER SKIPPING?
+		lastIndex++
+		a.log.Idx = lastIndex
+		a.log.Term = term
+		logs[idx] = a.log
+		l.inflight.PushBack(a)
+	}
+
+	// Write the log entry locally
+	if err := l.raft.logs.StoreLogs(logs); err != nil {
+		l.raft.logger.Error("failed to commit logs", "error", err)
+		for _, a := range applies {
+			trySendErr(a.errCh, err)
+		}
+		// TRANSITION TO FOLLOWER
+		return
+	}
+	l.commit.updateMatchIdx(l.raft.ID(), lastIndex) // ======= lastIdx is increased by applies.
+
+	// Update the last log since it's on disk now
+	l.raft.instate.setLastLog(lastIndex, term)
+
+	// Notify the replicators of the new log
+	for _, repl := range l.replicationMap {
+		tryNotify(repl.notifyCh)
+	}
+}
