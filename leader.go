@@ -122,11 +122,23 @@ func (l *Leader) Stepdown() {
 	// TODO: transition to follower
 }
 
+func (l *Leader) HandleTransition(trans *Transition) {
+
+}
+
+func (l *Leader) HandleHeartbeatTimeout() {}
+
+func (l *Leader) HandleRPC(rpc *RPC) {}
+
 func (l *Leader) HandleNewCommit() {
 	commitIdx := l.commit.getCommitIdx()
 	l.raft.instate.setCommitIdx(commitIdx)
 	l.processNewCommit(commitIdx)
 }
+
+func (l *Leader) HandleApply(a *Apply) {}
+
+func (l *Leader) HandleCommitNotify() {}
 
 type Apply struct {
 	log          *Log

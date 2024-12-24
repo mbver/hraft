@@ -2,7 +2,9 @@ package hraft
 
 import (
 	"errors"
+	"fmt"
 	"sync/atomic"
+	"time"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
@@ -19,7 +21,18 @@ const (
 	leaderStateType
 )
 
-type State interface{}
+type Transition struct {
+	To   RaftStateType
+	Term uint64
+}
+
+type State interface {
+	HandleTransition(*Transition)
+	HandleHeartbeatTimeout()
+	HandleRPC(*RPC)
+	HandleApply(*Apply)
+	HandleCommitNotify()
+}
 
 type RaftBuilder struct {
 	config   *Config
@@ -50,15 +63,22 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 }
 
 type Raft struct {
-	config   *Config
-	logger   hclog.Logger
-	appstate *AppState
-	instate  *internalState
-	state    RaftStateType
-	stateMap map[RaftStateType]State
-	logs     *LogStore
-	kvs      *KVStore
-	shutdown *ProtectedChan
+	config             *Config
+	logger             hclog.Logger
+	appstate           *AppState
+	instate            *internalState
+	state              RaftStateType
+	stateMap           map[RaftStateType]State
+	logs               *LogStore
+	kvs                *KVStore
+	heartbeatCh        chan *RPC
+	rpchCh             chan *RPC
+	applyCh            chan *Apply
+	commitNotifyCh     chan struct{}
+	transitionCh       chan *Transition
+	resetHeartbeatCh   chan struct{}
+	heartbeatTimeoutCh <-chan time.Time
+	shutdown           *ProtectedChan
 }
 
 func NewStateMap(r *Raft) map[RaftStateType]State {
@@ -136,5 +156,57 @@ func (r *Raft) applyCommits(commits []*Commit) {
 		for _, c := range commits {
 			trySendErr(c.ErrCh, ErrRaftShutdown)
 		}
+	}
+}
+
+func (r *Raft) receiveHeartbeat() {
+	for {
+		select {
+		case req := <-r.heartbeatCh:
+			fmt.Println(req)
+			// TODO: handle append entries request
+		case <-r.ShutdownCh():
+			return
+		}
+	}
+}
+
+// raft's mainloop
+func (r *Raft) receiveMsgs() {
+	for {
+		transition := r.getTransition()
+		r.getState().HandleTransition(transition)
+
+		if r.getResetHeartbeatTimeout() {
+			r.heartbeatTimeoutCh = time.After(r.config.HeartbeatTimeout)
+		}
+		select {
+		case rpc := <-r.rpchCh:
+			r.getState().HandleRPC(rpc)
+		case apply := <-r.applyCh:
+			r.getState().HandleApply(apply)
+		case <-r.commitNotifyCh:
+			r.getState().HandleCommitNotify()
+		case <-r.heartbeatTimeoutCh:
+			r.getState().HandleHeartbeatTimeout()
+		}
+	}
+}
+
+func (r *Raft) getTransition() *Transition {
+	select {
+	case transition := <-r.transitionCh:
+		return transition
+	default:
+		return nil
+	}
+}
+
+func (r *Raft) getResetHeartbeatTimeout() bool {
+	select {
+	case <-r.resetHeartbeatCh:
+		return true
+	default:
+		return false
 	}
 }

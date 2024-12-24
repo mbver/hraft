@@ -19,12 +19,21 @@ func NewCandidate(r *Raft) *Candidate {
 	}
 }
 
+func (c *Candidate) HandleTransition(trans *Transition) {}
+
+func (c *Candidate) HandleHeartbeatTimeout() {}
+
+func (c *Candidate) HandleRPC(rpc *RPC) {}
+
+func (c *Candidate) HandleApply(a *Apply) {}
+
+// will never be called
+func (c *Candidate) HandleCommitNotify() {}
+
 func (c *Candidate) HandleAppendEntries(req *AppendEntriesRequest) {
 	c.cancel.Close()
 	// transition to follower via transitionCh
 }
-
-func (c *Candidate) HandleHeartbeatTimeout() {}
 
 // term and vote handling. and how to send request vote
 func (c *Candidate) runElection() {
