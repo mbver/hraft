@@ -70,6 +70,7 @@ type Raft struct {
 	stateMap           map[RaftStateType]State
 	logs               *LogStore
 	kvs                *KVStore
+	transport          *netTransport
 	heartbeatCh        chan *RPC
 	rpchCh             chan *RPC
 	applyCh            chan *Apply
@@ -119,6 +120,33 @@ func (r *Raft) NumNodes() int {
 
 func (r *Raft) Peers() []string {
 	return []string{}
+}
+
+func (r *Raft) getPrevLog(nextIdx uint64) (idx, term uint64, err error) {
+	if nextIdx == 1 {
+		return 0, 0, nil
+	}
+	// skip snapshot stuffs for now
+	l := &Log{}
+	if err = r.logs.GetLog(nextIdx-1, l); err != nil {
+		return 0, 0, err
+	}
+	return l.Idx, l.Term, nil
+}
+
+func (r *Raft) getEntries(nextIdx, uptoIdx uint64) ([]*Log, error) {
+	size := r.config.MaxAppendEntries
+	entries := make([]*Log, 0, size)
+	maxIdx := min(nextIdx-1+uint64(size), uptoIdx)
+	for i := nextIdx; i <= maxIdx; i++ {
+		l := &Log{}
+		if err := r.logs.GetLog(i, l); err != nil {
+			r.logger.Error("failed to get log", "index", i, "error", err)
+			return nil, err
+		}
+		entries = append(entries, l)
+	}
+	return entries, nil
 }
 
 type Commit struct {

@@ -109,3 +109,43 @@ func jitter(interval time.Duration) time.Duration {
 	j := time.Duration(rand.Int63()) % interval
 	return j + interval
 }
+
+type backoff struct {
+	l     sync.Mutex
+	value time.Duration
+	base  time.Duration
+	max   time.Duration
+}
+
+func newBackoff(base, max time.Duration) *backoff {
+	return &backoff{
+		base: base,
+		max:  max,
+	}
+}
+
+func (b *backoff) next() {
+	b.l.Lock()
+	defer b.l.Unlock()
+	if b.value == 0 {
+		b.value = b.base
+		return
+	}
+	v := b.value * 2
+	if v > b.max {
+		v = b.max
+	}
+	b.value = v
+}
+
+func (b *backoff) getValue() time.Duration {
+	b.l.Lock()
+	defer b.l.Unlock()
+	return b.value
+}
+
+func (b *backoff) reset() {
+	b.l.Lock()
+	defer b.l.Unlock()
+	b.value = 0
+}

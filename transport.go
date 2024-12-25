@@ -46,6 +46,12 @@ type AppendEntriesRequest struct {
 	LeaderCommit uint64
 }
 
+type AppendEntriesResponse struct {
+	Term       uint64
+	LastLogIdx uint64
+	Success    bool
+}
+
 type RequestVoteRequest struct {
 	Term        uint64
 	Candidate   []byte
@@ -95,8 +101,8 @@ func (p *peerConn) sendMsg(mType msgType, msg interface{}) error {
 	return p.w.Flush()
 }
 
-func (p *peerConn) readMsg(msg interface{}) error {
-	return p.dec.Decode(msg)
+func (p *peerConn) readResp(res interface{}) error {
+	return p.dec.Decode(res)
 }
 
 type netTransportConfig struct {
@@ -164,6 +170,30 @@ func (t *netTransport) LocalAddr() string {
 
 func (t *netTransport) AdvertiseAddr() string {
 	return t.config.AdvertiseAddr
+}
+
+func (t *netTransport) AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error {
+	return t.unaryRPC(addr, appendEntriesMsgType, req, res)
+}
+
+func (t *netTransport) unaryRPC(addr string, mType msgType, req interface{}, res interface{}) error {
+	conn, err := t.getConn(addr)
+	if err != nil {
+		return err
+	}
+	if t.config.Timeout > 0 {
+		conn.conn.SetDeadline(time.Now().Add(t.config.Timeout))
+	}
+	if err = conn.sendMsg(mType, req); err != nil {
+		conn.Close()
+		return err
+	}
+	if err = conn.readResp(res); err != nil {
+		conn.Close()
+		return err
+	}
+	t.returnConn(conn)
+	return nil
 }
 
 func (t *netTransport) HeartbeatCh() chan *RPC {
@@ -243,36 +273,21 @@ func (t *netTransport) returnConn(conn *peerConn) {
 	t.connPool[addr] = append(conns, conn)
 }
 
-func createBackoff(base, max time.Duration) (nextDelay func() time.Duration, reset func()) {
-	backoff := base
-	nextDelay = func() time.Duration {
-		b := backoff
-		backoff *= 2
-		if backoff > max {
-			backoff = max
-		}
-		return b
-	}
-	reset = func() {
-		backoff = base
-	}
-	return
-}
-
 func (t *netTransport) listen() {
-	nextDelay, resetBackoff := createBackoff(5*time.Millisecond, time.Second)
+	backoff := newBackoff(5*time.Millisecond, time.Second)
 	for {
 		conn, err := t.listener.Accept()
 		if err != nil {
+			backoff.next()
 			select {
 			case <-t.shutdown.Ch():
 				return
-			case <-time.After(nextDelay()):
+			case <-time.After(backoff.getValue()):
 				t.logger.Error("failed to accept connection", "error", err)
 				continue
 			}
 		}
-		resetBackoff()
+		backoff.reset()
 		t.logger.Debug("accepted connection", "local-address", t.LocalAddr(), "remote-addr", conn.RemoteAddr().String())
 
 		go t.handleConn(conn) // the mess of stream and context. DO WE NEED TO USE WAITGROUP FOR THIS? WILL IT DEADLOCK? CAN JUST IGNORE THIS!
