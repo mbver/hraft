@@ -110,7 +110,7 @@ func (r *peerReplication) run() {
 func (r *peerReplication) replicate(uptoIdx uint64) {
 	nextIdx := r.getNextIdx()
 
-	for nextIdx <= uptoIdx {
+	for nextIdx <= uptoIdx && r.stepdown.IsClosed() {
 		select {
 		case <-time.After(r.backoff.getValue()):
 		case <-r.stepdown.Ch():
@@ -136,7 +136,6 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 		}
 		res := &AppendEntriesResponse{}
 		if err = r.raft.transport.AppendEntries(r.addr, req, res); err != nil {
-			// how to increase next delay without using it?
 			r.backoff.next()
 			return
 		}
@@ -158,9 +157,7 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 			r.setNextIdx(lastEntry.Idx + 1)
 			r.updateMatchIdx(r.addr, lastEntry.Idx)
 		}
-		if r.stepdown.IsClosed() {
-			return
-		}
+		nextIdx = r.getNextIdx()
 	}
 }
 
