@@ -94,15 +94,19 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 		}
 		if res.Term > r.currentTerm { // send to staleTermCh or stepdownCh?
 			r.stepdown.Close() // stop all replication early
-			r.raft.transitionCh <- &Transition{followerStateType, res.Term}
+			waitCh := r.raft.dispatchTransition(followerStateType, res.Term)
+			<-waitCh
 			return
 		}
 		if !res.Success {
-			r.backoff.next()
 			nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
 			r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
 			r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
-			continue
+			// if prevlog check failed, don't delay retry with new nextIdx
+			if res.PrevLogFailed {
+				continue
+			}
+			r.backoff.next()
 		}
 		r.backoff.reset()
 		if len(req.Entries) > 0 {

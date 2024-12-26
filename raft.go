@@ -21,8 +21,17 @@ const (
 )
 
 type Transition struct {
-	To   RaftStateType
-	Term uint64
+	To     RaftStateType
+	Term   uint64
+	DoneCh chan struct{}
+}
+
+func newTransition(to RaftStateType, term uint64) *Transition {
+	return &Transition{
+		To:     to,
+		Term:   term,
+		DoneCh: make(chan struct{}),
+	}
 }
 
 type State interface {
@@ -190,23 +199,138 @@ func (r *Raft) applyCommits(commits []*Commit) {
 	}
 }
 
-func (r *Raft) receiveHeartbeat() {
-	for {
-		select {
-		case req := <-r.heartbeatCh:
-			r.getState().HandleRPC(req)
-		case <-r.ShutdownCh():
-			return
+func (r *Raft) dispatchTransition(to RaftStateType, term uint64) chan struct{} {
+	transition := newTransition(to, term)
+	r.transitionCh <- transition
+	return transition.DoneCh
+}
+
+func (r *Raft) checkPrevLog(idx, term uint64) bool {
+	if idx == 0 {
+		return true
+	}
+	lastIdx, lastTerm := r.instate.getLastLog()
+	if lastIdx == idx {
+		return term == lastTerm
+	}
+	prevLog := &Log{}
+	if err := r.logs.GetLog(idx, prevLog); err != nil {
+		r.logger.Warn("failed to get previous log",
+			"previous-index", idx,
+			"last-index", lastIdx,
+			"error", err)
+		return false
+	}
+	if prevLog.Term != term {
+		r.logger.Warn("previous log term mis-match",
+			"ours", prevLog.Term,
+			"remote", term)
+		return false
+	}
+	return true
+}
+
+func (r *Raft) appendEntries(entries []*Log) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	lastLogIdx, _ := r.instate.getLastLog()
+	var newEntries []*Log
+	for i, entry := range entries {
+		if entry.Idx > lastLogIdx {
+			newEntries = entries[i:]
+			break
+		}
+		existed := &Log{}
+		if err := r.logs.GetLog(entry.Idx, existed); err != nil {
+			r.logger.Warn("failed to get log entry",
+				"index", entry.Idx,
+				"error", err)
+			return err
+		}
+		// check for log inconsitencies and handle it
+		if entry.Term != existed.Term {
+			// clear log suffix
+			r.logger.Warn("clearing logs suffix",
+				"from", entry.Idx,
+				"to", lastLogIdx)
+			if err := r.logs.DeleteRange(entry.Idx, lastLogIdx); err != nil {
+				r.logger.Error("failed to clear log suffix", "error", err)
+				return err
+			}
+			// update last-log
+			lastLogIdx, err := r.logs.LastIdx()
+			if err != nil {
+				r.logger.Warn("failed to get last-log-index from store", "error", err)
+				return err
+			}
+			if err := r.logs.GetLog(lastLogIdx, existed); err != nil {
+				r.logger.Warn("failed to get log entry",
+					"index", lastLogIdx,
+					"error", err)
+				return err
+			}
+			r.instate.setLastLog(lastLogIdx, existed.Term)
+			// get new-entries
+			newEntries = entries[i:]
+			break
 		}
 	}
+	if len(newEntries) == 0 {
+		return nil
+	}
+	if err := r.logs.StoreLogs(newEntries); err != nil {
+		r.logger.Error("failed to append to logs", "error", err)
+		return err
+	}
+	last := newEntries[len(newEntries)-1]
+	r.instate.setLastLog(last.Idx, last.Term)
+	return nil
+}
+
+func (r *Raft) updateLeaderCommit(idx uint64) {
+	if idx == 0 || idx <= r.instate.getCommitIdx() {
+		return
+	}
+	idx = min(idx, r.instate.getLastIdx())
+	r.instate.setCommitIdx(idx)
+	r.processNewLeaderCommit(idx)
+
+}
+
+func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
+	resp := &AppendEntriesResponse{
+		Term:          r.instate.getTerm(),
+		LastLogIdx:    r.instate.getLastIdx(),
+		Success:       false,
+		PrevLogFailed: false,
+	}
+	defer func() {
+		rpc.respCh <- resp
+	}()
+	if req.Term < r.instate.getTerm() {
+		return
+	}
+	if req.Term > r.instate.getTerm() {
+		waitCh := r.dispatchTransition(followerStateType, req.Term)
+		<-waitCh
+		resp.Term = req.Term
+	}
+	if !r.checkPrevLog(req.PrevLogIdx, req.PrevLogTerm) {
+		resp.PrevLogFailed = true
+		return
+	}
+	if err := r.appendEntries(req.Entries); err != nil {
+		return
+	}
+	r.updateLeaderCommit(req.LeaderCommit)
 }
 
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
 	for {
-		transition := r.getTransition() // TODO: handle transition in another goro?
-		r.getState().HandleTransition(transition)
-
+		// prioritize reset heartbeat timeout
 		if r.getResetHeartbeatTimeout() {
 			r.heartbeatTimeoutCh = time.After(r.config.HeartbeatTimeout)
 		}
@@ -219,16 +343,9 @@ func (r *Raft) receiveMsgs() {
 			r.getState().HandleCommitNotify()
 		case <-r.heartbeatTimeoutCh:
 			r.getState().HandleHeartbeatTimeout()
+		case <-r.ShutdownCh():
+			return
 		}
-	}
-}
-
-func (r *Raft) getTransition() *Transition {
-	select {
-	case transition := <-r.transitionCh:
-		return transition
-	default:
-		return nil
 	}
 }
 
@@ -238,6 +355,29 @@ func (r *Raft) getResetHeartbeatTimeout() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (r *Raft) receiveHeartbeat() {
+	for {
+		select {
+		case req := <-r.heartbeatCh:
+			r.getState().HandleRPC(req)
+		case <-r.ShutdownCh():
+			return
+		}
+	}
+}
+
+func (r *Raft) receiveTransitions() {
+	for {
+		select {
+		case transition := <-r.transitionCh:
+			r.getState().HandleTransition(transition)
+			close(transition.DoneCh)
+		case <-r.ShutdownCh():
+			return
+		}
 	}
 }
 

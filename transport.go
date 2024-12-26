@@ -47,9 +47,10 @@ type AppendEntriesRequest struct {
 }
 
 type AppendEntriesResponse struct {
-	Term       uint64
-	LastLogIdx uint64
-	Success    bool
+	Term          uint64
+	LastLogIdx    uint64
+	Success       bool
+	PrevLogFailed bool
 }
 
 type RequestVoteRequest struct {
@@ -74,7 +75,7 @@ type RpcResponse struct {
 type RPC struct {
 	command interface{}
 	reader  io.Reader
-	respCh  chan *RpcResponse
+	respCh  chan interface{}
 }
 
 type peerConn struct {
@@ -350,7 +351,7 @@ func (t *netTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, enc *c
 
 func newRPC(command interface{}) *RPC {
 	return &RPC{
-		respCh:  make(chan *RpcResponse, 1),
+		respCh:  make(chan interface{}, 1),
 		command: command,
 	}
 }
@@ -415,7 +416,7 @@ func sendUntilStop(rpc *RPC, ch chan *RPC, stopCh chan struct{}) bool {
 	}
 }
 
-func receiveUntilStop(ch chan *RpcResponse, stopCh chan struct{}) *RpcResponse {
+func receiveUntilStop(ch chan interface{}, stopCh chan struct{}) interface{} {
 	select {
 	case res := <-ch:
 		return res
