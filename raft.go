@@ -326,7 +326,7 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	}
 	r.updateLeaderCommit(req.LeaderCommit)
 	resp.Success = true
-	r.resetHeartbeatCh <- time.After(r.config.HeartbeatTimeout)
+	r.resetHeartbeatCh <- jitterTimeoutCh(r.config.HeartbeatTimeout)
 }
 
 // raft's mainloop

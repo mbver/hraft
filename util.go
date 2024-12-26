@@ -102,12 +102,9 @@ func trySendErr(ch chan error, err error) {
 	}
 }
 
-func jitter(interval time.Duration) time.Duration {
-	if interval == 0 {
-		return 0
-	}
+func jitterTimeoutCh(interval time.Duration) <-chan time.Time {
 	j := time.Duration(rand.Int63()) % interval
-	return j + interval
+	return time.After(interval + j)
 }
 
 type backoff struct {

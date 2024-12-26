@@ -53,7 +53,7 @@ func (r *peerReplication) run() {
 		case <-r.logAddedCh:
 			lastLogIdx, _ := r.raft.instate.getLastLog()
 			r.replicate(lastLogIdx)
-		case <-time.After(jitter(r.raft.config.CommitSyncInterval)):
+		case <-jitterTimeoutCh(r.raft.config.CommitSyncInterval):
 			lastLogIdx, _ := r.raft.instate.getLastLog()
 			r.replicate(lastLogIdx)
 		}
@@ -132,10 +132,9 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		case <-stopCh:
 		}
 		// Wait for the next heartbeat interval or forced notify
-		waitTime := jitter(r.raft.config.HeartbeatTimeout / 10)
 		select {
 		case <-r.pulseCh:
-		case <-time.After(waitTime):
+		case <-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10):
 		case <-stopCh:
 			return
 		}
