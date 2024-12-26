@@ -85,7 +85,7 @@ type Raft struct {
 	applyCh            chan *Apply
 	commitNotifyCh     chan struct{}
 	transitionCh       chan *Transition
-	resetHeartbeatCh   chan struct{}
+	resetHeartbeatCh   chan (<-chan time.Time)
 	heartbeatTimeoutCh <-chan time.Time
 	shutdown           *ProtectedChan
 }
@@ -325,14 +325,16 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 		return
 	}
 	r.updateLeaderCommit(req.LeaderCommit)
+	resp.Success = true
+	r.resetHeartbeatCh <- time.After(r.config.HeartbeatTimeout)
 }
 
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
 	for {
-		// prioritize reset heartbeat timeout
-		if r.getResetHeartbeatTimeout() {
-			r.heartbeatTimeoutCh = time.After(r.config.HeartbeatTimeout)
+		// prioritize reset heartbeat
+		if timeoutch := r.getResetHeartbeat(); timeoutch != nil {
+			r.heartbeatTimeoutCh = timeoutch
 		}
 		select {
 		case rpc := <-r.rpchCh:
@@ -349,12 +351,15 @@ func (r *Raft) receiveMsgs() {
 	}
 }
 
-func (r *Raft) getResetHeartbeatTimeout() bool {
-	select {
-	case <-r.resetHeartbeatCh:
-		return true
-	default:
-		return false
+func (r *Raft) getResetHeartbeat() <-chan time.Time {
+	var timeoutch <-chan time.Time
+	// drain all resets
+	for {
+		select {
+		case timeoutch = <-r.resetHeartbeatCh:
+		default:
+			return timeoutch
+		}
 	}
 }
 

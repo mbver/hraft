@@ -60,6 +60,7 @@ type RequestVoteRequest struct {
 	LastLogTerm uint64
 }
 
+type RequestVoteResponse struct{}
 type InstallSnapshotRequest struct {
 	Term        uint64
 	Leader      []byte
