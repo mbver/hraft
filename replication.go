@@ -102,11 +102,12 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 			nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
 			r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
 			r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
-			// if prevlog check failed, don't delay retry with new nextIdx
-			if res.PrevLogFailed {
-				continue
+			// if replicate failed not because of log-consistency check,
+			// delay retry futher
+			if !res.PrevLogFailed {
+				r.backoff.next()
 			}
-			r.backoff.next()
+			continue
 		}
 		r.backoff.reset()
 		if len(req.Entries) > 0 {
