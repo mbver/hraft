@@ -204,7 +204,7 @@ func (r *Raft) receiveHeartbeat() {
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
 	for {
-		transition := r.getTransition()
+		transition := r.getTransition() // TODO: handle transition in another goro?
 		r.getState().HandleTransition(transition)
 
 		if r.getResetHeartbeatTimeout() {
