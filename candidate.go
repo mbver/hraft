@@ -23,11 +23,11 @@ func NewCandidate(r *Raft) *Candidate {
 func (c *Candidate) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case followerStateType:
-		if c.raft.instate.getTerm() < c.term {
+		if trans.Term < c.term {
 			return
 		}
 		c.cancel.Close()
-		c.raft.instate.setTerm(trans.Term)
+		c.raft.setTerm(trans.Term)
 		c.raft.setStateType(followerStateType)
 	case leaderStateType:
 		if trans.Term != c.term { // can this happen?

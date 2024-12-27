@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 type internalState struct {
@@ -15,25 +16,11 @@ type internalState struct {
 }
 
 func (in *internalState) getTerm() uint64 {
-	in.l.Lock()
-	defer in.l.Unlock()
-	return in.term
+	return atomic.LoadUint64(&in.term)
 }
 
 func (in *internalState) setTerm(term uint64) {
-	in.l.Lock()
-	defer in.l.Unlock()
-	if in.term >= term {
-		return
-	}
-	in.term = term
-}
-
-func (in *internalState) incrementTerm() uint64 {
-	in.l.Lock()
-	defer in.l.Unlock()
-	in.term++
-	return in.term
+	atomic.StoreUint64(&in.term, term)
 }
 
 func (in *internalState) getCommitIdx() uint64 {

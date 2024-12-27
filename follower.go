@@ -13,18 +13,24 @@ func NewFollower(r *Raft) *Follower {
 func (f *Follower) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case candidateStateType:
+		if trans.Term <= f.raft.getTerm() {
+			return
+		}
+		f.raft.setTerm(trans.Term)
 		candidate := f.raft.getCandidateState()
 		candidate.term = trans.Term
 		go candidate.runElection()
 		f.raft.setStateType(candidateStateType)
 	case followerStateType:
-		f.raft.instate.setTerm(trans.Term)
+		if trans.Term > f.raft.getTerm() {
+			f.raft.setTerm(trans.Term)
+		}
 	}
 }
 
 func (f *Follower) HandleHeartbeatTimeout() {
 	f.raft.heartbeatTimeout.block()
-	term := f.raft.instate.incrementTerm()
+	term := f.raft.getTerm() + 1
 	waitCh := f.raft.dispatchTransition(candidateStateType, term)
 	<-waitCh
 }

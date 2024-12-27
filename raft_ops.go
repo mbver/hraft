@@ -1,10 +1,13 @@
 package hraft
 
-import "sync/atomic"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	resp := &AppendEntriesResponse{
-		Term:          r.instate.getTerm(),
+		Term:          r.getTerm(),
 		LastLogIdx:    r.instate.getLastIdx(),
 		Success:       false,
 		PrevLogFailed: false,
@@ -12,10 +15,10 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	defer func() {
 		rpc.respCh <- resp
 	}()
-	if req.Term < r.instate.getTerm() {
+	if req.Term < r.getTerm() {
 		return
 	}
-	if req.Term > r.instate.getTerm() {
+	if req.Term > r.getTerm() {
 		waitCh := r.dispatchTransition(followerStateType, req.Term)
 		<-waitCh
 		resp.Term = req.Term
@@ -223,6 +226,23 @@ func (r *Raft) getLeaderState() *Leader {
 
 func (r *Raft) getCandidateState() *Candidate {
 	return r.stateMap[candidateStateType].(*Candidate)
+}
+
+var (
+	keyCurrentTerm  = []byte("CurrentTerm")
+	keyLastVoteTerm = []byte("LastVoteTerm")
+	keyLastVoteCand = []byte("LastVoteCand")
+)
+
+func (r *Raft) getTerm() uint64 {
+	return r.instate.getTerm()
+}
+
+func (r *Raft) setTerm(term uint64) {
+	if err := r.kvs.SetUint64(keyCurrentTerm, term); err != nil {
+		panic(fmt.Errorf("failed to save term: %v", err))
+	}
+	r.instate.setTerm(term)
 }
 
 func (r *Raft) NumNodes() int {

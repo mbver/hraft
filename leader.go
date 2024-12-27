@@ -102,7 +102,7 @@ func (l *Leader) HandleTransition(trans *Transition) {
 	case followerStateType:
 		if trans.Term > l.term {
 			l.Stepdown() // wait for all goros stop?
-			l.raft.instate.setTerm(trans.Term)
+			l.raft.setTerm(trans.Term)
 			l.raft.setStateType(followerStateType)
 		}
 		if trans.Term == l.term {
@@ -163,7 +163,7 @@ type Apply struct {
 
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
-	term := l.raft.instate.getTerm()
+	term := l.raft.getTerm()
 	lastIndex := l.raft.instate.getLastIdx() // ???
 
 	n := len(applies)
@@ -216,7 +216,7 @@ func (l *Leader) startReplication() {
 			addr:           p,
 			updateMatchIdx: l.commit.updateMatchIdx,
 			logAddedCh:     make(chan struct{}, 1),
-			currentTerm:    l.raft.instate.getTerm(),
+			currentTerm:    l.raft.getTerm(),
 			nextIdx:        lastIdx + 1,
 			stepdown:       l.stepdown,
 		}
