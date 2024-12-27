@@ -68,6 +68,8 @@ func (c *Candidate) runElection() {
 			return // cancel election
 		case <-electionTimeoutCh:
 			return // cancel election
+		case <-c.raft.shutdownCh():
+			return
 		}
 	}
 

@@ -50,6 +50,8 @@ func (r *peerReplication) run() {
 			return
 		case <-r.stepdown.Ch():
 			return
+		case <-r.raft.shutdownCh():
+			return
 		case <-r.logAddedCh:
 			lastLogIdx, _ := r.raft.instate.getLastLog()
 			r.replicate(lastLogIdx)

@@ -200,11 +200,7 @@ func (r *Raft) dispatchTransition(to RaftStateType, term uint64) chan struct{} {
 	return transition.DoneCh
 }
 
-func (r *Raft) ID() string {
-	return "" // use address, bindAddr
-}
-
-func (r *Raft) ShutdownCh() chan struct{} {
+func (r *Raft) shutdownCh() chan struct{} {
 	return r.shutdown.Ch()
 }
 
@@ -235,4 +231,8 @@ func (r *Raft) NumNodes() int {
 
 func (r *Raft) Peers() []string {
 	return []string{}
+}
+
+func (r *Raft) ID() string {
+	return "" // use address, bindAddr
 }

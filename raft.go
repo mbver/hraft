@@ -74,7 +74,7 @@ func (r *Raft) receiveMsgs() {
 				continue
 			}
 			r.getState().HandleHeartbeatTimeout()
-		case <-r.ShutdownCh():
+		case <-r.shutdownCh():
 			return
 		}
 	}
@@ -86,7 +86,7 @@ func (r *Raft) receiveHeartbeat() {
 		select {
 		case req := <-r.heartbeatCh:
 			r.getState().HandleRPC(req)
-		case <-r.ShutdownCh():
+		case <-r.shutdownCh():
 			return
 		}
 	}
@@ -99,7 +99,7 @@ func (r *Raft) receiveTransitions() {
 		case transition := <-r.transitionCh:
 			r.getState().HandleTransition(transition)
 			close(transition.DoneCh)
-		case <-r.ShutdownCh():
+		case <-r.shutdownCh():
 			return
 		}
 	}
@@ -110,7 +110,7 @@ func (r *Raft) receiveMutations() {
 	select {
 	case commits := <-r.appstate.mutateCh:
 		r.appstate.state.Apply(commits)
-	case <-r.ShutdownCh():
+	case <-r.shutdownCh():
 		return
 	}
 }
