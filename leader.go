@@ -54,6 +54,7 @@ func (c *commitControl) updateCommitIdx() {
 }
 
 type Leader struct {
+	term           uint64
 	l              sync.Mutex
 	raft           *Raft
 	active         bool
@@ -97,9 +98,20 @@ func (l *Leader) Stepdown() {
 }
 
 func (l *Leader) HandleTransition(trans *Transition) {
-
+	switch trans.To {
+	case followerStateType:
+		if trans.Term > l.term {
+			l.Stepdown() // wait for all goros stop?
+			l.raft.instate.setTerm(trans.Term)
+			l.raft.setStateType(followerStateType)
+		}
+		if trans.Term == l.term {
+			panic("two leaders of the same term!")
+		}
+	}
 }
 
+// heartbeatTimeout is blocked in leader state
 func (l *Leader) HandleHeartbeatTimeout() {}
 
 func (l *Leader) HandleRPC(rpc *RPC) {}

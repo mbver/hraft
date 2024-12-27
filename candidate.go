@@ -6,6 +6,7 @@ import (
 )
 
 type Candidate struct {
+	term   uint64
 	raft   *Raft
 	cancel *ResetableProtectedChan
 }
@@ -19,8 +20,28 @@ func NewCandidate(r *Raft) *Candidate {
 	}
 }
 
-func (c *Candidate) HandleTransition(trans *Transition) {}
+func (c *Candidate) HandleTransition(trans *Transition) {
+	switch trans.To {
+	case followerStateType:
+		if c.raft.instate.getTerm() < c.term {
+			return
+		}
+		c.cancel.Close()
+		c.raft.instate.setTerm(trans.Term)
+		c.raft.setStateType(followerStateType)
+	case leaderStateType:
+		if trans.Term != c.term { // can this happen?
+			return
+		}
+		// win election
+		leader := c.raft.getLeaderState()
+		leader.term = c.term
+		leader.StepUp()
+		c.raft.setStateType(leaderStateType)
+	}
+}
 
+// heartbeat timeout is blocked in candidate state
 func (c *Candidate) HandleHeartbeatTimeout() {}
 
 func (c *Candidate) HandleRPC(rpc *RPC) {}
@@ -30,11 +51,6 @@ func (c *Candidate) HandleApply(a *Apply) {}
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}
 
-func (c *Candidate) HandleAppendEntries(req *AppendEntriesRequest) {
-	c.cancel.Close()
-	// transition to follower via transitionCh
-}
-
 // term and vote handling. and how to send request vote
 func (c *Candidate) runElection() {
 	c.cancel.Reset()
@@ -42,7 +58,8 @@ func (c *Candidate) runElection() {
 	voteCh := make(chan *Vote, c.raft.NumNodes())
 
 	electionTimeoutCh := time.After(c.raft.config.ElectionTimeout)
-	for {
+	enoughVote := false
+	for !enoughVote {
 		select {
 		case vote := <-voteCh:
 			fmt.Println("==== vote", vote)
@@ -53,6 +70,7 @@ func (c *Candidate) runElection() {
 			return // cancel election
 		}
 	}
+
 	// win election
-	// transtion to leader via transtionCh
+	c.raft.transitionCh <- newTransition(leaderStateType, c.term)
 }

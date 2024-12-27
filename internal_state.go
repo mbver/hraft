@@ -1,6 +1,8 @@
 package hraft
 
-import "sync"
+import (
+	"sync"
+)
 
 type internalState struct {
 	l               sync.Mutex
@@ -21,7 +23,17 @@ func (in *internalState) getTerm() uint64 {
 func (in *internalState) setTerm(term uint64) {
 	in.l.Lock()
 	defer in.l.Unlock()
+	if in.term >= term {
+		return
+	}
 	in.term = term
+}
+
+func (in *internalState) incrementTerm() uint64 {
+	in.l.Lock()
+	defer in.l.Unlock()
+	in.term++
+	return in.term
 }
 
 func (in *internalState) getCommitIdx() uint64 {

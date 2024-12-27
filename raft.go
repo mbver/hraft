@@ -165,6 +165,10 @@ func (r *Raft) getLeaderState() *Leader {
 	return r.stateMap[leaderStateType].(*Leader)
 }
 
+func (r *Raft) getCandidateState() *Candidate {
+	return r.stateMap[candidateStateType].(*Candidate)
+}
+
 func (r *Raft) NumNodes() int {
 	return 0
 }
