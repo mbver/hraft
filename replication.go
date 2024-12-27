@@ -92,7 +92,7 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 			r.backoff.next()
 			return
 		}
-		if res.Term > r.currentTerm { // send to staleTermCh or stepdownCh?
+		if res.Term > r.currentTerm {
 			r.stepdown.Close() // stop all replication early
 			waitCh := r.raft.dispatchTransition(followerStateType, res.Term)
 			<-waitCh

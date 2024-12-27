@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -70,24 +71,65 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 	b.logger = logger
 }
 
+type heartbeatTimeout struct {
+	timeout time.Duration
+	l       sync.Mutex
+	ch      <-chan time.Time
+	fresh   bool
+}
+
+func newHeartbeatTimeout(timeout time.Duration) *heartbeatTimeout {
+	return &heartbeatTimeout{
+		timeout: timeout,
+		ch:      jitterTimeoutCh(timeout),
+		fresh:   true,
+	}
+}
+
+func (h *heartbeatTimeout) reset() {
+	h.l.Lock()
+	defer h.l.Unlock()
+	h.ch = jitterTimeoutCh(h.timeout)
+	h.fresh = true
+}
+
+func (h *heartbeatTimeout) block() {
+	h.l.Lock()
+	defer h.l.Unlock()
+	h.ch = nil
+	h.fresh = true
+}
+
+func (h *heartbeatTimeout) getCh() <-chan time.Time {
+	h.l.Lock()
+	defer h.l.Unlock()
+	h.fresh = false
+	return h.ch
+}
+
+func (h *heartbeatTimeout) isFresh() bool {
+	h.l.Lock()
+	defer h.l.Unlock()
+	return h.fresh
+}
+
 type Raft struct {
-	config             *Config
-	logger             hclog.Logger
-	appstate           *AppState
-	instate            *internalState
-	state              RaftStateType
-	stateMap           map[RaftStateType]State
-	logs               *LogStore
-	kvs                *KVStore
-	transport          *netTransport
-	heartbeatCh        chan *RPC
-	rpchCh             chan *RPC
-	applyCh            chan *Apply
-	commitNotifyCh     chan struct{}
-	transitionCh       chan *Transition
-	resetHeartbeatCh   chan (<-chan time.Time)
-	heartbeatTimeoutCh <-chan time.Time
-	shutdown           *ProtectedChan
+	config           *Config
+	logger           hclog.Logger
+	appstate         *AppState
+	instate          *internalState
+	state            RaftStateType
+	stateMap         map[RaftStateType]State
+	logs             *LogStore
+	kvs              *KVStore
+	transport        *netTransport
+	heartbeatCh      chan *RPC
+	rpchCh           chan *RPC
+	applyCh          chan *Apply
+	commitNotifyCh   chan struct{}
+	transitionCh     chan *Transition
+	heartbeatTimeout *heartbeatTimeout
+	shutdown         *ProtectedChan
 }
 
 func NewStateMap(r *Raft) map[RaftStateType]State {
@@ -326,16 +368,12 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	}
 	r.updateLeaderCommit(req.LeaderCommit)
 	resp.Success = true
-	r.resetHeartbeatCh <- jitterTimeoutCh(r.config.HeartbeatTimeout)
+	r.heartbeatTimeout.reset()
 }
 
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
 	for {
-		// prioritize reset heartbeat
-		if timeoutch := r.getResetHeartbeat(); timeoutch != nil {
-			r.heartbeatTimeoutCh = timeoutch
-		}
 		select {
 		case rpc := <-r.rpchCh:
 			r.getState().HandleRPC(rpc)
@@ -343,22 +381,13 @@ func (r *Raft) receiveMsgs() {
 			r.getState().HandleApply(apply)
 		case <-r.commitNotifyCh:
 			r.getState().HandleCommitNotify()
-		case <-r.heartbeatTimeoutCh:
+		case <-r.heartbeatTimeout.getCh():
+			if r.heartbeatTimeout.isFresh() { // heartTimeout is reset, keep going
+				continue
+			}
 			r.getState().HandleHeartbeatTimeout()
 		case <-r.ShutdownCh():
 			return
-		}
-	}
-}
-
-func (r *Raft) getResetHeartbeat() <-chan time.Time {
-	var timeoutch <-chan time.Time
-	// drain all resets
-	for {
-		select {
-		case timeoutch = <-r.resetHeartbeatCh:
-		default:
-			return timeoutch
 		}
 	}
 }
