@@ -45,7 +45,7 @@ func (r *peerReplication) run() {
 	for {
 		select {
 		case <-r.stopCh:
-			lastLogIdx, _ := r.raft.instate.getLastLog()
+			lastLogIdx, _ := r.raft.getLastLog()
 			r.replicate(lastLogIdx)
 			return
 		case <-r.stepdown.Ch():
@@ -53,10 +53,10 @@ func (r *peerReplication) run() {
 		case <-r.raft.shutdownCh():
 			return
 		case <-r.logAddedCh:
-			lastLogIdx, _ := r.raft.instate.getLastLog()
+			lastLogIdx, _ := r.raft.getLastLog()
 			r.replicate(lastLogIdx)
 		case <-jitterTimeoutCh(r.raft.config.CommitSyncInterval):
-			lastLogIdx, _ := r.raft.instate.getLastLog()
+			lastLogIdx, _ := r.raft.getLastLog()
 			r.replicate(lastLogIdx)
 		}
 	}

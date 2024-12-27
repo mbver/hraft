@@ -53,14 +53,14 @@ type AppendEntriesResponse struct {
 	PrevLogFailed bool
 }
 
-type RequestVoteRequest struct {
+type VoteRequest struct {
 	Term        uint64
 	Candidate   []byte
 	LastLogIdx  uint64
 	LastLogTerm uint64
 }
 
-type RequestVoteResponse struct{}
+type VoteResponse struct{}
 type InstallSnapshotRequest struct {
 	Term        uint64
 	Leader      []byte
@@ -175,6 +175,10 @@ func (t *netTransport) AdvertiseAddr() string {
 }
 
 func (t *netTransport) AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error {
+	return t.unaryRPC(addr, appendEntriesMsgType, req, res)
+}
+
+func (t *netTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
 	return t.unaryRPC(addr, appendEntriesMsgType, req, res)
 }
 
@@ -371,7 +375,7 @@ func (t *netTransport) handleAppendEntries(dec *codec.Decoder, enc *codec.Encode
 }
 
 func (t *netTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder) error {
-	var req RequestVoteRequest
+	var req VoteRequest
 	if err := dec.Decode(&req); err != nil {
 		return err
 	}

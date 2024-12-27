@@ -39,7 +39,7 @@ func (r *Raft) checkPrevLog(idx, term uint64) bool {
 	if idx == 0 {
 		return true
 	}
-	lastIdx, lastTerm := r.instate.getLastLog()
+	lastIdx, lastTerm := r.getLastLog()
 	if lastIdx == idx {
 		return term == lastTerm
 	}
@@ -65,7 +65,7 @@ func (r *Raft) appendEntries(entries []*Log) error {
 		return nil
 	}
 
-	lastLogIdx, _ := r.instate.getLastLog()
+	lastLogIdx, _ := r.getLastLog()
 	var newEntries []*Log
 	for i, entry := range entries {
 		if entry.Idx > lastLogIdx {
@@ -243,6 +243,14 @@ func (r *Raft) setTerm(term uint64) {
 		panic(fmt.Errorf("failed to save term: %v", err))
 	}
 	r.instate.setTerm(term)
+}
+
+func (r *Raft) getLastLog() (uint64, uint64) {
+	return r.instate.getLastLog()
+}
+
+func (r *Raft) setLastLog(idx, term uint64) {
+	r.instate.setLastLog(idx, term)
 }
 
 func (r *Raft) NumNodes() int {

@@ -67,6 +67,8 @@ func (c *Candidate) runElection() {
 		case <-c.cancel.Ch():
 			return // cancel election
 		case <-electionTimeoutCh:
+			waitCh := c.raft.dispatchTransition(followerStateType, c.term)
+			<-waitCh
 			return // cancel election
 		case <-c.raft.shutdownCh():
 			return
@@ -74,5 +76,6 @@ func (c *Candidate) runElection() {
 	}
 
 	// win election
-	c.raft.transitionCh <- newTransition(leaderStateType, c.term)
+	waitCh := c.raft.dispatchTransition(leaderStateType, c.term)
+	<-waitCh
 }
