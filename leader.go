@@ -119,34 +119,21 @@ func (l *Leader) HandleRPC(rpc *RPC) {}
 func (l *Leader) HandleNewCommit() {
 	commitIdx := l.commit.getCommitIdx()
 	l.raft.instate.setCommitIdx(commitIdx)
-	l.processNewCommit(commitIdx)
-}
 
-func (l *Leader) HandleApply(a *Apply) {}
-
-func (l *Leader) HandleCommitNotify() {}
-
-type Apply struct {
-	log          *Log
-	errCh        chan error
-	dispatchedAt time.Time
-}
-
-func (l *Leader) processNewCommit(idx uint64) {
 	first := l.inflight.Front() // this can be nil!
 	if first == nil {
-		l.raft.processNewLeaderCommit(idx)
+		l.raft.handleNewLeaderCommit(commitIdx)
 		return
 	}
 	firstIdx := first.Value.(*Apply).log.Idx
-	l.raft.processNewLeaderCommit(min(firstIdx-1, idx))
+	l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
 
 	batchSize := l.raft.config.MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
 
 	for e := first; e != nil; e = e.Next() {
 		a := e.Value.(*Apply)
-		if a.log.Idx > idx {
+		if a.log.Idx > commitIdx {
 			break
 		}
 		batch = append(batch, &Commit{a.log, a.errCh})
@@ -161,7 +148,17 @@ func (l *Leader) processNewCommit(idx uint64) {
 		l.raft.applyCommits(batch)
 	}
 
-	l.raft.instate.setLastApplied(idx)
+	l.raft.instate.setLastApplied(commitIdx)
+}
+
+func (l *Leader) HandleApply(a *Apply) {}
+
+func (l *Leader) HandleCommitNotify() {}
+
+type Apply struct {
+	log          *Log
+	errCh        chan error
+	dispatchedAt time.Time
 }
 
 func (l *Leader) dispatchApplies(applies []*Apply) {
