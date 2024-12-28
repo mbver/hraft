@@ -1,9 +1,5 @@
 package hraft
 
-import (
-	"time"
-)
-
 type Candidate struct {
 	term   uint64
 	peers  []string
@@ -103,7 +99,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 	// collecting votes
 	voteGranted := 0
 	voteNeeded := len(c.peers)/2 + 1
-	electionTimeoutCh := time.After(c.raft.config.ElectionTimeout)
+	electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout) // ===== ELECTION TIME OUT IS FROM 150-300 ms
 	for voteGranted < voteNeeded {
 		select {
 		case vote := <-voteCh:

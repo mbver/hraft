@@ -44,6 +44,7 @@ type Raft struct {
 	config           *Config
 	logger           hclog.Logger
 	appstate         *AppState
+	membership       *membership
 	instate          *internalState
 	state            RaftStateType
 	stateMap         map[RaftStateType]State
