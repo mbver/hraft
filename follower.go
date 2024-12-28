@@ -19,7 +19,13 @@ func (f *Follower) HandleTransition(trans *Transition) {
 		f.raft.setTerm(trans.Term)
 		candidate := f.raft.getCandidateState()
 		candidate.term = trans.Term
-		go candidate.runElection()
+		candidate.peers = f.raft.Peers()
+		voteCh, err := candidate.setupElection()
+		if err != nil {
+			f.raft.logger.Error("failed to setup election for candidate. transition failed", "error", err)
+			return
+		}
+		go candidate.runElection(voteCh)
 		f.raft.setStateType(candidateStateType)
 	case followerStateType:
 		if trans.Term > f.raft.getTerm() {

@@ -1,6 +1,8 @@
 package hraft
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"sync/atomic"
 )
@@ -251,6 +253,91 @@ func (r *Raft) getLastLog() (uint64, uint64) {
 
 func (r *Raft) setLastLog(idx, term uint64) {
 	r.instate.setLastLog(idx, term)
+}
+
+func (r *Raft) persistVote(term uint64, candidate []byte) error {
+	if err := r.kvs.SetUint64(keyLastVoteTerm, term); err != nil {
+		return err
+	}
+	if err := r.kvs.Set(keyLastVoteCand, candidate); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Raft) handleRequestVote(rpc RPC, req *VoteRequest) {
+	// setup a response
+	resp := &VoteResponse{
+		Term:    r.getTerm(),
+		Granted: false,
+	}
+	defer func() {
+		rpc.respCh <- resp
+	}()
+	// ignore an older term
+	if req.Term < r.getTerm() {
+		return
+	}
+
+	// Increase the term if we see a newer one
+	if req.Term > r.getTerm() {
+		waitCh := r.dispatchTransition(followerStateType, req.Term)
+		<-waitCh
+		resp.Term = req.Term
+	}
+	if r.getStateType() != followerStateType { // don't grant vote if we are not in follower state
+		return
+	}
+
+	candidate := req.Candidate
+	// Check if we have voted yet
+	lastVoteTerm, err := r.kvs.GetUint64(keyLastVoteTerm)
+	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+		r.logger.Error("failed to get last vote term", "error", err)
+		return
+	}
+	lastCandidate, err := r.kvs.Get(keyLastVoteCand)
+	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+		r.logger.Error("failed to get last vote candidate", "error", err)
+		return
+	}
+
+	// Check if we've voted in this election before
+	if lastVoteTerm == req.Term {
+		r.logger.Info("duplicate requestVote for same term", "term", req.Term)
+		if bytes.Equal(candidate, lastCandidate) {
+			r.logger.Warn("duplicate requestVote from", "candidate", candidate)
+			resp.Granted = true
+		}
+		return
+	}
+
+	lastIdx, lastTerm := r.instate.getLastLog()
+	// reject older last log term
+	if lastTerm > req.LastLogTerm {
+		r.logger.Warn("rejecting vote request since our last term is greater",
+			"candidate", candidate,
+			"last-term", lastTerm,
+			"last-candidate-term", req.LastLogTerm)
+		return
+	}
+	// reject older last logIdx
+	if lastTerm == req.LastLogTerm && lastIdx > req.LastLogIdx {
+		r.logger.Warn("rejecting vote request since our last index is greater",
+			"candidate", candidate,
+			"last-index", lastIdx,
+			"last-candidate-index", req.LastLogIdx)
+		return
+	}
+
+	// Persist a vote for safety
+	if err := r.persistVote(req.Term, req.Candidate); err != nil {
+		r.logger.Error("failed to persist vote", "error", err)
+		return
+	}
+
+	resp.Granted = true
+	r.heartbeatTimeout.reset()
 }
 
 func (r *Raft) NumNodes() int {
