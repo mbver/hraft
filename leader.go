@@ -61,6 +61,7 @@ type Leader struct {
 	commit         *commitControl
 	inflight       *list.List
 	replicationMap map[string]*peerReplication
+	staging        *staging
 	stepdown       *ResetableProtectedChan
 }
 
@@ -82,7 +83,9 @@ func (l *Leader) StepUp() {
 	}
 	l.active = true // TODO: may not be needed?
 	l.stepdown.Reset()
-	// TODO: start replication
+	l.staging = newStaging()
+	l.startReplication()
+	go l.receiveStaging()
 }
 
 func (l *Leader) Stepdown() {
@@ -200,40 +203,4 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	}
 	l.l.Unlock()
 
-}
-
-func (l *Leader) startReplication() {
-	lastIdx := l.raft.instate.getLastIdx()
-	l.l.Lock()
-	defer l.l.Unlock()
-	for _, p := range l.raft.Peers() {
-		if p == l.raft.ID() {
-			continue
-		}
-		l.raft.logger.Info("added peer, starting replication", "peer", p)
-		r := &peerReplication{
-			raft:           l.raft,
-			addr:           p,
-			updateMatchIdx: l.commit.updateMatchIdx,
-			logAddedCh:     make(chan struct{}, 1),
-			currentTerm:    l.raft.getTerm(),
-			nextIdx:        lastIdx + 1,
-			stepdown:       l.stepdown,
-		}
-
-		l.replicationMap[p] = r
-		go r.run()
-		tryNotify(r.logAddedCh)
-	}
-}
-
-func (l *Leader) stopPeerReplication(addr string) {
-	l.l.Lock()
-	defer l.l.Unlock()
-	r, ok := l.replicationMap[addr]
-	if !ok {
-		return
-	}
-	close(r.stopCh)
-	delete(l.replicationMap, addr)
 }

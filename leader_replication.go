@@ -19,6 +19,8 @@ type peerReplication struct {
 	raft *Raft
 	// logAddedCh is notified every time new entries are appended to the log.
 	logAddedCh chan struct{}
+	// notify leader that the peers'log is synced
+	logSyncedCh chan struct{}
 	// trigger a heartbeat immediately
 	pulseCh chan struct{}
 	// leader's stepdown control
@@ -27,6 +29,7 @@ type peerReplication struct {
 	stopCh chan struct{}
 	// waiting time to retry when replication fails
 	backoff *backoff
+	staging *staging
 }
 
 func (r *peerReplication) getNextIdx() uint64 {
@@ -63,8 +66,8 @@ func (r *peerReplication) run() {
 }
 
 func (r *peerReplication) replicate(uptoIdx uint64) {
+	<-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10)
 	nextIdx := r.getNextIdx()
-
 	for nextIdx < uptoIdx && !r.stepdown.IsClosed() {
 		select {
 		case <-time.After(r.backoff.getValue()):
@@ -119,6 +122,13 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 		}
 		nextIdx = r.getNextIdx()
 	}
+	if r.stepdown.IsClosed() || r.staging == nil {
+		return
+	}
+	if !r.staging.isActive() || r.staging.getId() != r.addr {
+		return
+	}
+	r.staging.logSyncCh <- r.addr
 }
 
 func (r *peerReplication) heartbeat(stopCh chan struct{}) {
@@ -133,10 +143,11 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		case <-time.After(backoff.getValue()):
 		case <-stopCh:
 		}
-		// Wait for the next heartbeat interval or forced notify
+		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
 		select {
+		case <-time.After(r.raft.config.HeartbeatTimeout):
+			<-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10)
 		case <-r.pulseCh:
-		case <-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10):
 		case <-stopCh:
 			return
 		}
@@ -149,4 +160,40 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		backoff.reset()
 		// TODO: verify if we are still leader and notify those waiting for leadership-check
 	}
+}
+
+func (l *Leader) startReplication() {
+	lastIdx := l.raft.instate.getLastIdx()
+	l.l.Lock()
+	defer l.l.Unlock()
+	for _, p := range l.raft.Peers() {
+		if p == l.raft.ID() {
+			continue
+		}
+		l.raft.logger.Info("added peer, starting replication", "peer", p)
+		r := &peerReplication{
+			raft:           l.raft,
+			addr:           p,
+			updateMatchIdx: l.commit.updateMatchIdx,
+			logAddedCh:     make(chan struct{}, 1),
+			currentTerm:    l.raft.getTerm(),
+			nextIdx:        lastIdx + 1,
+			stepdown:       l.stepdown,
+		}
+
+		l.replicationMap[p] = r
+		go r.run()
+		tryNotify(r.logAddedCh)
+	}
+}
+
+func (l *Leader) stopPeerReplication(addr string) {
+	l.l.Lock()
+	defer l.l.Unlock()
+	r, ok := l.replicationMap[addr]
+	if !ok {
+		return
+	}
+	close(r.stopCh)
+	delete(l.replicationMap, addr)
 }
