@@ -1,6 +1,9 @@
 package hraft
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type peerRole int8
 
@@ -54,6 +57,38 @@ func (m *membership) getVoters() []string {
 		voters = append(voters, p.id)
 	}
 	return voters
+}
+
+func (m *membership) validate() {
+	numStaging := 0
+	for _, p := range m.latest {
+		if p.isStaging() {
+			numStaging++
+		}
+	}
+	if numStaging > 1 {
+		panic(fmt.Errorf("only 1 staging peer is allowed, got %d", numStaging))
+	}
+	numStaging = 0
+	for _, p := range m.commited {
+		if p.isStaging() {
+			numStaging++
+		}
+	}
+	if numStaging > 1 {
+		panic(fmt.Errorf("only 1 staging peer is allowed, got %d", numStaging))
+	}
+}
+
+func (m *membership) getStaging() string {
+	m.l.Lock()
+	defer m.l.Unlock()
+	for _, p := range m.latest {
+		if p.role == roleStaging {
+			return p.id
+		}
+	}
+	return ""
 }
 
 func (m *membership) getPeer(id string) peerRole {

@@ -362,3 +362,7 @@ func (r *Raft) ID() string {
 func (r *Raft) Local() *peer {
 	return r.membership.getLocal()
 }
+
+func (r *Raft) Staging() string {
+	return r.membership.getStaging()
+}

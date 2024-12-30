@@ -84,6 +84,9 @@ func (l *Leader) StepUp() {
 	l.active = true // TODO: may not be needed?
 	l.stepdown.Reset()
 	l.staging = newStaging()
+	if id := l.raft.Staging(); id != "" {
+		l.staging.stage(id)
+	}
 	l.startReplication()
 	go l.receiveStaging()
 }
