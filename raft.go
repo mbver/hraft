@@ -74,6 +74,10 @@ func (r *Raft) receiveMsgs() {
 			if r.heartbeatTimeout.isFresh() { // heartTimeout is reset, keep going
 				continue
 			}
+			if !r.membership.getLocal().isVoter() { // non-voter node will not transition to candidate
+				r.heartbeatTimeout.reset()
+				continue
+			}
 			r.getState().HandleHeartbeatTimeout()
 		case <-r.shutdownCh():
 			return

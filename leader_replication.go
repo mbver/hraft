@@ -167,9 +167,6 @@ func (l *Leader) startReplication() {
 	l.l.Lock()
 	defer l.l.Unlock()
 	for _, p := range l.raft.Peers() {
-		if p == l.raft.ID() {
-			continue
-		}
 		l.raft.logger.Info("added peer, starting replication", "peer", p)
 		r := &peerReplication{
 			raft:           l.raft,

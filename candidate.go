@@ -2,7 +2,7 @@ package hraft
 
 type Candidate struct {
 	term   uint64
-	peers  []string
+	voters []string
 	raft   *Raft
 	cancel *ResetableProtectedChan
 }
@@ -53,7 +53,7 @@ type voteResult struct {
 // setup must be done before running election and collecting votes
 func (c *Candidate) setupElection() (chan *voteResult, error) {
 	c.cancel.Reset()
-	voteCh := make(chan *voteResult, len(c.peers))
+	voteCh := make(chan *voteResult, len(c.voters)+1)
 	if err := c.raft.persistVote(c.term, []byte(c.raft.ID())); err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 		LastLogTerm: lastTerm,
 	}
 
-	for _, addr := range c.peers {
+	for _, addr := range c.voters {
 		if addr == c.raft.ID() {
 			continue
 		}
@@ -98,7 +98,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 
 	// collecting votes
 	voteGranted := 0
-	voteNeeded := len(c.peers)/2 + 1
+	voteNeeded := (1+len(c.voters))/2 + 1
 	electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout) // ===== ELECTION TIME OUT IS FROM 150-300 ms
 	for voteGranted < voteNeeded {
 		select {

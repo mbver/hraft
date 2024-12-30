@@ -266,6 +266,9 @@ func (r *Raft) persistVote(term uint64, candidate []byte) error {
 }
 
 func (r *Raft) handleRequestVote(rpc RPC, req *VoteRequest) {
+	if !r.membership.getLocal().isVoter() { // non-voter node don't involve request vote
+		return
+	}
 	// setup a response
 	resp := &VoteResponse{
 		Term:    r.getTerm(),
@@ -344,10 +347,18 @@ func (r *Raft) NumNodes() int {
 	return 0
 }
 
+func (r *Raft) Voters() []string {
+	return r.membership.getVoters()
+}
+
 func (r *Raft) Peers() []string {
-	return []string{}
+	return r.membership.peers()
 }
 
 func (r *Raft) ID() string {
-	return "" // use address, bindAddr
+	return r.membership.getLocal().getId()
+}
+
+func (r *Raft) Local() *peer {
+	return r.membership.getLocal()
 }
