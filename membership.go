@@ -45,6 +45,22 @@ func (p *peer) isStaging() bool {
 	return p.role == roleStaging
 }
 
+func validatePeers(peers []*peer) error {
+	numStaging := 0
+	for _, p := range peers {
+		if p.id == "" {
+			return fmt.Errorf("empty peer id")
+		}
+		if p.isStaging() {
+			numStaging++
+		}
+	}
+	if numStaging > 1 {
+		return fmt.Errorf("number of staging peer exceeds 1: %d", numStaging)
+	}
+	return nil
+}
+
 type membership struct {
 	l            sync.Mutex
 	local        *peer
@@ -65,7 +81,7 @@ func (m *membership) getVoters() []string {
 	defer m.l.Unlock()
 	voters := []string{}
 	for _, p := range m.latest {
-		if p.id == m.local.id || p.role != roleVoter {
+		if p.role != roleVoter {
 			continue
 		}
 		voters = append(voters, p.id)
@@ -121,10 +137,97 @@ func (m *membership) peers() []string {
 	defer m.l.Unlock()
 	mems := make([]string, 0, len(m.latest)-1)
 	for _, p := range m.latest {
-		if p.id == m.local.id {
-			continue
-		}
 		mems = append(mems, p.id)
 	}
 	return mems
+}
+
+func (m *membership) getLatest() []*peer {
+	m.l.Lock()
+	defer m.l.Unlock()
+	return copyPeers(m.latest)
+}
+
+func (m *membership) setLatest(in []*peer, idx uint64) {
+	m.l.Lock()
+	defer m.l.Unlock()
+	m.latest = copyPeers(in)
+	m.lastestIdx = idx
+}
+
+func copyPeers(in []*peer) []*peer {
+	out := make([]*peer, len(in))
+	for i, p := range in {
+		out[i] = &peer{p.id, p.role}
+	}
+	return out
+}
+
+type membershipChageType int8
+
+const (
+	addStaging membershipChageType = iota
+	promotePeer
+	demotePeer
+	removePeer
+)
+
+func (t membershipChageType) String() string {
+	switch t {
+	case addStaging:
+		return "add_staging"
+	case promotePeer:
+		return "promote_peer"
+	case demotePeer:
+		return "demote_peer"
+	case removePeer:
+		return "remove_peer"
+	}
+	return "unknown membershipt change"
+}
+
+type membershipChange struct {
+	addr       string
+	changeType membershipChageType
+}
+
+func (m *membership) newPeersFromChange(change *membershipChange) ([]*peer, error) {
+	latest := m.getLatest()
+	switch change.changeType {
+	case addStaging:
+		for _, p := range latest {
+			if p.id == change.addr {
+				return nil, fmt.Errorf("peer exists with role %s", p.role)
+			}
+		}
+		latest = append(latest, &peer{change.addr, roleStaging})
+		if err := validatePeers(latest); err != nil {
+			return nil, err
+		}
+		return latest, nil
+	case promotePeer:
+		for _, p := range latest {
+			if p.id == change.addr && p.role == roleStaging {
+				p.role = roleVoter
+				return latest, nil
+			}
+		}
+	case demotePeer:
+		for _, p := range latest {
+			if p.id == change.addr && p.role == roleVoter {
+				p.role = roleVoter
+				return latest, nil
+			}
+		}
+	case removePeer:
+		for i, p := range latest {
+			if p.id == change.addr {
+				n := len(latest)
+				latest[i], latest[n-1] = latest[n-1], latest[i]
+				latest = latest[:n-1]
+				return latest, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("unable to find peer %s for %s change", change.addr, change.changeType)
 }

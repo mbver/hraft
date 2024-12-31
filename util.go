@@ -68,12 +68,12 @@ func decode(buf []byte, out interface{}) error {
 }
 
 // Encode writes an encoded object to a new bytes buffer
-func encode(in interface{}) (*bytes.Buffer, error) {
+func encode(in interface{}) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
 	hd := codec.MsgpackHandle{}
 	enc := codec.NewEncoder(buf, &hd)
 	err := enc.Encode(in)
-	return buf, err
+	return buf.Bytes(), err
 }
 
 // Converts bytes to an integer

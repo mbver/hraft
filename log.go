@@ -6,6 +6,8 @@ type LogType uint8
 
 const (
 	LogComand LogType = iota
+	LogMember
+	LogNoOp
 )
 
 type Log struct {

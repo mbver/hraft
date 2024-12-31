@@ -38,26 +38,28 @@ type State interface {
 	HandleRPC(*RPC)
 	HandleApply(*Apply)
 	HandleCommitNotify()
+	HandleMembershipChange(*membershipChange)
 }
 
 type Raft struct {
-	config           *Config
-	logger           hclog.Logger
-	appstate         *AppState
-	membership       *membership
-	instate          *internalState
-	state            RaftStateType
-	stateMap         map[RaftStateType]State
-	logs             *LogStore
-	kvs              *KVStore
-	transport        *netTransport
-	heartbeatCh      chan *RPC
-	rpchCh           chan *RPC
-	applyCh          chan *Apply
-	commitNotifyCh   chan struct{}
-	transitionCh     chan *Transition
-	heartbeatTimeout *heartbeatTimeout
-	shutdown         *ProtectedChan
+	config             *Config
+	logger             hclog.Logger
+	appstate           *AppState
+	membership         *membership
+	instate            *internalState
+	state              RaftStateType
+	stateMap           map[RaftStateType]State
+	logs               *LogStore
+	kvs                *KVStore
+	transport          *netTransport
+	heartbeatCh        chan *RPC
+	rpchCh             chan *RPC
+	applyCh            chan *Apply
+	commitNotifyCh     chan struct{}
+	membershipChangeCh chan *membershipChange
+	transitionCh       chan *Transition
+	heartbeatTimeout   *heartbeatTimeout
+	shutdown           *ProtectedChan
 }
 
 // raft's mainloop
@@ -70,6 +72,8 @@ func (r *Raft) receiveMsgs() {
 			r.getState().HandleApply(apply)
 		case <-r.commitNotifyCh:
 			r.getState().HandleCommitNotify()
+		case change := <-r.membershipChangeCh:
+			r.getState().HandleMembershipChange(change)
 		case <-r.heartbeatTimeout.getCh():
 			if r.heartbeatTimeout.isFresh() { // heartTimeout is reset, keep going
 				continue

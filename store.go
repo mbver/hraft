@@ -152,7 +152,7 @@ func (s *LogStore) StoreLogs(logs []*Log) error {
 		}
 
 		bucket := tx.Bucket(s.bucket)
-		if err := bucket.Put(key, val.Bytes()); err != nil {
+		if err := bucket.Put(key, val); err != nil {
 			return err
 		}
 	}

@@ -12,13 +12,30 @@ type commitControl struct {
 	commitNotifyCh chan struct{}
 	matchIdxs      map[string]uint64
 	commitIdx      uint64
-	startIdx       uint64
+}
+
+func newCommitControl(startIdx uint64, commitNotifyCh chan struct{}) *commitControl {
+	return &commitControl{
+		commitNotifyCh: commitNotifyCh,
+		commitIdx:      startIdx,
+	}
 }
 
 func (c *commitControl) getCommitIdx() uint64 {
 	c.l.Lock()
 	defer c.l.Unlock()
 	return c.commitIdx
+}
+
+func (c *commitControl) updateVoters(voters []string) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	oldMap := c.matchIdxs
+	c.matchIdxs = make(map[string]uint64)
+	for _, addr := range voters {
+		c.matchIdxs[addr] = oldMap[addr]
+	}
+	// need to update commitIdx?
 }
 
 func (c *commitControl) updateMatchIdx(id string, idx uint64) {
@@ -47,7 +64,7 @@ func (c *commitControl) updateCommitIdx() {
 
 	commitIdx := matched[(len(matched)-1)/2]
 
-	if commitIdx > c.commitIdx && commitIdx >= c.startIdx { // why care about startIdx?
+	if commitIdx > c.commitIdx {
 		c.commitIdx = commitIdx
 		tryNotify(c.commitNotifyCh)
 	}
@@ -169,7 +186,7 @@ type Apply struct {
 
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
-	term := l.raft.getTerm()
+	term := l.term
 	lastIndex := l.raft.instate.getLastIdx() // ???
 
 	n := len(applies)
@@ -205,5 +222,26 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 		tryNotify(repl.logAddedCh)
 	}
 	l.l.Unlock()
+}
 
+func (l *Leader) HandleMembershipChange(change *membershipChange) { // return errors?
+	peers, err := l.raft.membership.newPeersFromChange(change)
+	if err != nil {
+		l.raft.logger.Error("unable to create new peers from change", "error", err)
+		return
+	}
+	encoded, err := encode(peers)
+	if err != nil {
+		l.raft.logger.Error("unable to encode peers", "error", err)
+	}
+	log := &Log{
+		Type: LogMember,
+		Data: encoded,
+	}
+	l.dispatchApplies([]*Apply{{
+		log: log,
+	}})
+	l.raft.membership.setLatest(peers, log.Idx)
+	l.commit.updateVoters(l.raft.Voters())
+	l.startReplication()
 }

@@ -167,6 +167,13 @@ func (l *Leader) startReplication() {
 	l.l.Lock()
 	defer l.l.Unlock()
 	for _, addr := range l.raft.Peers() {
+		if addr == l.raft.ID() {
+			continue
+		}
+		_, ok := l.replicationMap[addr]
+		if ok {
+			continue
+		}
 		l.raft.logger.Info("added peer, starting replication", "peer", addr)
 		r := l.startPeerReplication(addr, lastIdx)
 		l.replicationMap[addr] = r
@@ -186,19 +193,6 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 	go r.run()
 	tryNotify(r.logAddedCh)
 	return r
-}
-
-func (l *Leader) tryAddPeerReplication(addr string) {
-	lastIdx := l.raft.instate.getLastIdx() // ??
-	l.l.Lock()
-	defer l.l.Unlock()
-	_, ok := l.replicationMap[addr]
-	if ok {
-		return
-	}
-	l.raft.logger.Info("added peer, starting replication", "peer", addr)
-	r := l.startPeerReplication(addr, lastIdx)
-	l.replicationMap[addr] = r
 }
 
 func (l *Leader) stopPeerReplication(addr string) {

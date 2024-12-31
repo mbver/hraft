@@ -45,6 +45,8 @@ func (c *Candidate) HandleApply(a *Apply) {}
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}
 
+func (c *Candidate) HandleMembershipChange(change *membershipChange) {} // returns error?
+
 type voteResult struct {
 	VoterId  string
 	Response *VoteResponse
@@ -53,7 +55,7 @@ type voteResult struct {
 // setup must be done before running election and collecting votes
 func (c *Candidate) setupElection() (chan *voteResult, error) {
 	c.cancel.Reset()
-	voteCh := make(chan *voteResult, len(c.voters)+1)
+	voteCh := make(chan *voteResult, len(c.voters))
 	if err := c.raft.persistVote(c.term, []byte(c.raft.ID())); err != nil {
 		return nil, err
 	}
@@ -98,7 +100,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 
 	// collecting votes
 	voteGranted := 0
-	voteNeeded := (1+len(c.voters))/2 + 1
+	voteNeeded := len(c.voters)/2 + 1
 	electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout) // ===== ELECTION TIME OUT IS FROM 150-300 ms
 	for voteGranted < voteNeeded {
 		select {
