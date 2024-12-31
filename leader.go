@@ -244,4 +244,14 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) { // return er
 	l.raft.membership.setLatest(peers, log.Idx)
 	l.commit.updateVoters(l.raft.Voters())
 	l.startReplication()
+	switch change.changeType {
+	case addStaging:
+		l.staging.stage(change.addr)
+	case promotePeer:
+		l.staging.promote(change.addr)
+	case demotePeer:
+		// TODO
+	case removePeer:
+		// TODO
+	}
 }

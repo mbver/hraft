@@ -48,18 +48,6 @@ func (s *staging) promote(id string) {
 	s.promotedCh <- id
 }
 
-func (l *Leader) stagePeer(id string) error {
-	// do config change
-	l.staging.stage(id)
-	return nil
-}
-
-func (l *Leader) promotePeer(id string) error {
-	// do config change
-	l.staging.promote(id)
-	return nil
-}
-
 // the nested loop to ensure
 // only one staging is handled at a time.
 // goro is blocked until peer is promoted
@@ -84,6 +72,7 @@ func (l *Leader) receiveLogSynced(stagingId string) {
 			if id != stagingId {
 				panic("staging_id not match logsync_id")
 			}
+			l.raft.membershipChangeCh <- &membershipChange{id, promotePeer}
 			l.receivePromoted(id)
 		case <-l.stepdown.Ch():
 			return
