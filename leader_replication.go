@@ -163,25 +163,42 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 }
 
 func (l *Leader) startReplication() {
-	lastIdx := l.raft.instate.getLastIdx()
+	lastIdx := l.raft.instate.getLastIdx() // will negotiate to older value with follower
 	l.l.Lock()
 	defer l.l.Unlock()
-	for _, p := range l.raft.Peers() {
-		l.raft.logger.Info("added peer, starting replication", "peer", p)
-		r := &peerReplication{
-			raft:           l.raft,
-			addr:           p,
-			updateMatchIdx: l.commit.updateMatchIdx,
-			logAddedCh:     make(chan struct{}, 1),
-			currentTerm:    l.raft.getTerm(),
-			nextIdx:        lastIdx + 1,
-			stepdown:       l.stepdown,
-		}
-
-		l.replicationMap[p] = r
-		go r.run()
-		tryNotify(r.logAddedCh)
+	for _, addr := range l.raft.Peers() {
+		l.raft.logger.Info("added peer, starting replication", "peer", addr)
+		r := l.startPeerReplication(addr, lastIdx)
+		l.replicationMap[addr] = r
 	}
+}
+
+func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplication {
+	r := &peerReplication{
+		raft:           l.raft,
+		addr:           addr,
+		updateMatchIdx: l.commit.updateMatchIdx,
+		logAddedCh:     make(chan struct{}, 1),
+		currentTerm:    l.raft.getTerm(),
+		nextIdx:        lastIdx + 1,
+		stepdown:       l.stepdown,
+	}
+	go r.run()
+	tryNotify(r.logAddedCh)
+	return r
+}
+
+func (l *Leader) tryAddPeerReplication(addr string) {
+	lastIdx := l.raft.instate.getLastIdx() // ??
+	l.l.Lock()
+	defer l.l.Unlock()
+	_, ok := l.replicationMap[addr]
+	if ok {
+		return
+	}
+	l.raft.logger.Info("added peer, starting replication", "peer", addr)
+	r := l.startPeerReplication(addr, lastIdx)
+	l.replicationMap[addr] = r
 }
 
 func (l *Leader) stopPeerReplication(addr string) {

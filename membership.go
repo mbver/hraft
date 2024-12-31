@@ -14,6 +14,20 @@ const (
 	roleAbsent
 )
 
+func (r peerRole) String() string {
+	switch r {
+	case roleStaging:
+		return "staging"
+	case roleVoter:
+		return "voter"
+	case roleNonVoter:
+		return "non-voter"
+	case roleAbsent:
+		return "absent"
+	}
+	return "unknown-role"
+}
+
 type peer struct {
 	id   string
 	role peerRole

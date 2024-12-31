@@ -68,6 +68,7 @@ func (l *Leader) receiveStaging() {
 		var id string
 		select {
 		case id = <-l.staging.stageCh:
+			l.tryAddPeerReplication(id)
 			l.receiveLogSynced(id)
 		case <-l.stepdown.Ch():
 			return
