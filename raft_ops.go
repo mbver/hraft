@@ -363,6 +363,6 @@ func (r *Raft) Local() *peer {
 	return r.membership.getLocal()
 }
 
-func (r *Raft) Staging() string {
+func (r *Raft) StagingPeer() string {
 	return r.membership.getStaging()
 }
