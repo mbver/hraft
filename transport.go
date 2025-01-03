@@ -223,6 +223,10 @@ func (t *netTransport) Close() {
 	}
 	t.closed.Close()
 	t.listener.Close()
+	t.ClearPool()
+}
+
+func (t *netTransport) ClearPool() {
 	t.poolL.Lock()
 	defer t.poolL.Unlock()
 

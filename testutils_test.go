@@ -72,3 +72,27 @@ func twoTestTransport() (*netTransport, *netTransport, func(), error) {
 		addresses.cleanup()
 	}, nil
 }
+
+func getTestAppendEntriesRequestResponse(leader string) (*AppendEntriesRequest, *AppendEntriesResponse) {
+	req := &AppendEntriesRequest{
+		Term:        10,
+		Leader:      []byte(leader),
+		PrevLogIdx:  100,
+		PrevLogTerm: 4,
+		Entries: []*Log{
+			{
+				Idx:  101,
+				Term: 4,
+				Type: LogNoOp,
+			},
+		},
+		LeaderCommitIdx: 90,
+	}
+	resp := &AppendEntriesResponse{
+		Term:               4,
+		LastLogIdx:         90,
+		Success:            true,
+		PrevLogCheckFailed: false,
+	}
+	return req, resp
+}
