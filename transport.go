@@ -16,6 +16,8 @@ import (
 
 type msgType uint8
 
+const DefaultTimeoutScale = 256 * 1024
+
 const (
 	appendEntriesMsgType = iota
 	requestVoteMsgType
@@ -38,19 +40,19 @@ func (t msgType) String() string {
 }
 
 type AppendEntriesRequest struct {
-	Term         uint64
-	Leader       []byte
-	PrevLogIdx   uint64
-	PrevLogTerm  uint64
-	Entries      []*Log
-	LeaderCommit uint64
+	Term            uint64
+	Leader          []byte
+	PrevLogIdx      uint64
+	PrevLogTerm     uint64
+	Entries         []*Log
+	LeaderCommitIdx uint64
 }
 
 type AppendEntriesResponse struct {
-	Term          uint64
-	LastLogIdx    uint64
-	Success       bool
-	PrevLogFailed bool
+	Term               uint64
+	LastLogIdx         uint64
+	Success            bool
+	PrevLogCheckFailed bool
 }
 
 type VoteRequest struct {
@@ -158,7 +160,7 @@ func newNetTransport(config *netTransportConfig, logger hclog.Logger) (*netTrans
 		l.Close()
 		return nil, err
 	}
-	return &netTransport{
+	t := &netTransport{
 		config:      config,
 		logger:      logger,
 		shutdown:    newProtectedChan(),
@@ -166,7 +168,9 @@ func newNetTransport(config *netTransportConfig, logger hclog.Logger) (*netTrans
 		listener:    l,
 		heartbeatCh: make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
 		rpcCh:       make(chan *RPC), // ======= do we buffer?
-	}, nil
+	}
+	go t.listen()
+	return t, nil
 }
 
 func (t *netTransport) LocalAddr() string {
@@ -317,8 +321,7 @@ func (t *netTransport) handleConn(conn net.Conn) {
 			return
 		default:
 		}
-
-		if err := t.handleCommand(r, dec, enc); err != nil {
+		if err := t.handleMessage(r, dec, enc); err != nil {
 			if err != io.EOF {
 				t.logger.Error("failed to decode incoming command", "error", err)
 			}
@@ -334,10 +337,10 @@ func (t *netTransport) handleConn(conn net.Conn) {
 func isHeartbeat(req *AppendEntriesRequest) bool {
 	return req.Term != 0 && req.Leader != nil && // SEEMS UNNECESSARY
 		req.PrevLogIdx == 0 && req.PrevLogTerm == 0 &&
-		len(req.Entries) == 0 && req.LeaderCommit == 0
+		len(req.Entries) == 0 && req.LeaderCommitIdx == 0
 }
 
-func (t *netTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
+func (t *netTransport) handleMessage(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
 	// Get the rpc type
 	b, err := r.ReadByte()
 	if err != nil {

@@ -85,12 +85,12 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 			return
 		}
 		req := &AppendEntriesRequest{
-			Term:         r.currentTerm,
-			Leader:       []byte(r.raft.ID()),
-			PrevLogIdx:   prevIdx,
-			PrevLogTerm:  prevTerm,
-			Entries:      entries,
-			LeaderCommit: r.raft.instate.getCommitIdx(),
+			Term:            r.currentTerm,
+			Leader:          []byte(r.raft.ID()),
+			PrevLogIdx:      prevIdx,
+			PrevLogTerm:     prevTerm,
+			Entries:         entries,
+			LeaderCommitIdx: r.raft.instate.getCommitIdx(),
 		}
 		res := &AppendEntriesResponse{}
 		if err = r.raft.transport.AppendEntries(r.addr, req, res); err != nil {
@@ -109,7 +109,7 @@ func (r *peerReplication) replicate(uptoIdx uint64) {
 			r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
 			// if replicate failed not because of log-consistency check,
 			// delay retry futher
-			if !res.PrevLogFailed {
+			if !res.PrevLogCheckFailed {
 				r.backoff.next()
 			}
 			continue

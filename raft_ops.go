@@ -9,10 +9,10 @@ import (
 
 func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	resp := &AppendEntriesResponse{
-		Term:          r.getTerm(),
-		LastLogIdx:    r.instate.getLastIdx(),
-		Success:       false,
-		PrevLogFailed: false,
+		Term:               r.getTerm(),
+		LastLogIdx:         r.instate.getLastIdx(),
+		Success:            false,
+		PrevLogCheckFailed: false,
 	}
 	defer func() {
 		rpc.respCh <- resp
@@ -26,13 +26,13 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 		resp.Term = req.Term
 	}
 	if !r.checkPrevLog(req.PrevLogIdx, req.PrevLogTerm) {
-		resp.PrevLogFailed = true
+		resp.PrevLogCheckFailed = true
 		return
 	}
 	if err := r.appendEntries(req.Entries); err != nil {
 		return
 	}
-	r.updateLeaderCommit(req.LeaderCommit)
+	r.updateLeaderCommit(req.LeaderCommitIdx)
 	resp.Success = true
 	r.heartbeatTimeout.reset()
 }
