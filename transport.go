@@ -123,7 +123,7 @@ type netTransportConfig struct {
 type netTransport struct {
 	config   *netTransportConfig
 	logger   hclog.Logger
-	shutdown *ProtectedChan
+	closed   *ProtectedChan
 	connPool map[string][]*peerConn
 	poolL    sync.Mutex
 	// seems no need for context, just use shutdownCh
@@ -163,7 +163,7 @@ func newNetTransport(config *netTransportConfig, logger hclog.Logger) (*netTrans
 	t := &netTransport{
 		config:      config,
 		logger:      logger,
-		shutdown:    newProtectedChan(),
+		closed:      newProtectedChan(),
 		connPool:    map[string][]*peerConn{},
 		listener:    l,
 		heartbeatCh: make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
@@ -218,17 +218,17 @@ func (t *netTransport) RpcCh() chan *RPC {
 }
 
 func (t *netTransport) Close() {
-	if t.shutdown.IsClosed() {
+	if t.closed.IsClosed() {
 		return
 	}
-	t.shutdown.Close()
+	t.closed.Close()
 	t.listener.Close()
 	t.poolL.Lock()
 	defer t.poolL.Unlock()
 
 	for k, conns := range t.connPool {
 		for _, conn := range conns {
-			conn.Close() // ======== should close stream first?
+			conn.Close()
 		}
 		delete(t.connPool, k)
 	}
@@ -279,7 +279,7 @@ func (t *netTransport) returnConn(conn *peerConn) {
 	addr := conn.addr
 	conns := t.connPool[addr]
 
-	if t.shutdown.IsClosed() || len(conns) == t.config.PoolSize {
+	if t.closed.IsClosed() || len(conns) == t.config.PoolSize {
 		conn.Close()
 		return
 	}
@@ -293,7 +293,7 @@ func (t *netTransport) listen() {
 		if err != nil {
 			backoff.next()
 			select {
-			case <-t.shutdown.Ch():
+			case <-t.closed.Ch():
 				return
 			case <-time.After(backoff.getValue()):
 				t.logger.Error("failed to accept connection", "error", err)
@@ -316,7 +316,7 @@ func (t *netTransport) handleConn(conn net.Conn) {
 
 	for {
 		select {
-		case <-t.shutdown.Ch():
+		case <-t.closed.Ch():
 			t.logger.Debug("handle conn: transport shutdown")
 			return
 		default:
@@ -377,7 +377,7 @@ func (t *netTransport) handleAppendEntries(dec *codec.Decoder, enc *codec.Encode
 		rpcCh = t.heartbeatCh
 	}
 	rpc := newRPC(&req)
-	return dispatchWaitRespond(rpc, rpcCh, enc, t.shutdown.Ch())
+	return dispatchWaitRespond(rpc, rpcCh, enc, t.closed.Ch())
 }
 
 func (t *netTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder) error {
@@ -386,7 +386,7 @@ func (t *netTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder)
 		return err
 	}
 	rpc := newRPC(&req)
-	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.shutdown.Ch())
+	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.closed.Ch())
 }
 
 func (t *netTransport) handleInstallSnapshot(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
@@ -396,7 +396,7 @@ func (t *netTransport) handleInstallSnapshot(r *bufio.Reader, dec *codec.Decoder
 	}
 	rpc := newRPC(&req)
 	rpc.reader = io.LimitReader(r, req.Size)
-	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.shutdown.Ch())
+	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.closed.Ch())
 }
 
 func (n *netTransport) handleRpcTimeoutNow(dec *codec.Decoder, enc *codec.Encoder) error { // WHAT THE HECK IS THIS?
