@@ -53,3 +53,22 @@ func newTestTransport(addr string) (*netTransport, error) {
 	logger := newTestLogger(fmt.Sprintf("transport:%s", addr))
 	return newNetTransport(config, logger)
 }
+
+func twoTestTransport() (*netTransport, *netTransport, func(), error) {
+	addresses := newTestAddressesWithSameIP()
+	addr1 := addresses.next()
+	trans1, err := newTestTransport(addr1)
+	if err != nil {
+		return nil, nil, addresses.cleanup, err
+	}
+	addr2 := addresses.next()
+	trans2, err := newTestTransport(addr2)
+	if err != nil {
+		return nil, nil, addresses.cleanup, err
+	}
+	return trans1, trans2, func() {
+		trans2.Close()
+		trans1.Close()
+		addresses.cleanup()
+	}, nil
+}

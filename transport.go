@@ -186,7 +186,7 @@ func (t *netTransport) AppendEntries(addr string, req *AppendEntriesRequest, res
 }
 
 func (t *netTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
-	return t.unaryRPC(addr, appendEntriesMsgType, req, res)
+	return t.unaryRPC(addr, requestVoteMsgType, req, res)
 }
 
 func (t *netTransport) unaryRPC(addr string, mType msgType, req interface{}, res interface{}) error {
