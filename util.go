@@ -103,6 +103,9 @@ func trySendErr(ch chan error, err error) {
 }
 
 func jitterTimeoutCh(interval time.Duration) <-chan time.Time {
+	if interval == 0 {
+		return nil
+	}
 	j := time.Duration(rand.Int63()) % interval
 	return time.After(interval + j)
 }
@@ -145,4 +148,18 @@ func (b *backoff) reset() {
 	b.l.Lock()
 	defer b.l.Unlock()
 	b.value = 0
+}
+
+func min(a, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
