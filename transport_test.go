@@ -4,12 +4,24 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNetTransport_StartStop(t *testing.T) {
+	addresses := newTestAddressesWithSameIP()
+	defer addresses.cleanup()
+	addr := addresses.next()
+	trans, err := newTestTransport(addr)
+	require.Nil(t, err)
+	trans.Close()
+}
 
 func TestNetTransport_AppendEntries(t *testing.T) {
 	trans1, trans2, cleanup, err := twoTestTransport()
@@ -66,6 +78,61 @@ func TestNetTransport_RequestVote(t *testing.T) {
 	require.Nil(t, err)
 	require.Nil(t, <-errCh)
 	require.True(t, reflect.DeepEqual(resp, gotResp), "response mismatch")
+}
+
+func TestNetTransport_PoolSize(t *testing.T) {
+	trans1, trans2, cleanup, err := twoTestTransport()
+	defer cleanup()
+	require.Nil(t, err)
+	req, resp := getTestAppendEntriesRequestResponse(trans1.AdvertiseAddr())
+	errCh := make(chan error, 15)
+	stopReceiveCh := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case rpc := <-trans2.RpcCh():
+				if !reflect.DeepEqual(rpc.command, req) {
+					errCh <- fmt.Errorf("request mismatch: want: %+v, got: %+v", req, rpc.command)
+					rpc.respCh <- nil
+					return
+				}
+				errCh <- nil
+				rpc.respCh <- resp
+			case <-stopReceiveCh:
+				errCh <- nil
+			case <-time.After(200 * time.Millisecond):
+				errCh <- fmt.Errorf("expect no timeout")
+			}
+		}
+	}()
+	wg := sync.WaitGroup{}
+	for k := 0; k < 5; k++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var gotResp AppendEntriesResponse
+			err := trans1.AppendEntries(trans2.AdvertiseAddr(), req, &gotResp)
+			errCh <- err
+			if !reflect.DeepEqual(resp, &gotResp) {
+				errCh <- fmt.Errorf("response mismatch. want:%+v, got:%+v", resp, &gotResp)
+				return
+			}
+			errCh <- nil
+		}()
+	}
+	wg.Wait()
+	require.Equal(t, 2, len(trans1.connPool[trans2.AdvertiseAddr()]))
+	for n := 0; n < 15; n++ {
+		select {
+		case err := <-errCh:
+			require.Nil(t, err)
+		default:
+			t.Fatalf("expect no timeout, n = %d", n)
+		}
+	}
+	close(stopReceiveCh)
+	err = <-errCh
+	require.Nil(t, err)
 }
 
 func TestNetTransport_ClearPool(t *testing.T) {
@@ -127,4 +194,38 @@ func TestNetTransport_ClearPool(t *testing.T) {
 	close(stopReceiveCh)
 	err = <-errCh
 	require.Nil(t, err)
+}
+
+type countWriter struct {
+	t        *testing.T
+	numCalls *int32
+}
+
+func (w *countWriter) Write(p []byte) (n int, err error) {
+	atomic.AddInt32(w.numCalls, 1)
+	if !strings.Contains(string(p), "failed to accept connection") {
+		w.t.Error("did not receive expected log message")
+	}
+	w.t.Log("record tcp listen error")
+	return len(p), nil
+}
+
+func TestTransport_ListenBackoff(t *testing.T) {
+	var numErr int32
+	counter := &countWriter{
+		t:        t,
+		numCalls: &numErr,
+	}
+	logger := hclog.New(&hclog.LoggerOptions{
+		Name:   "test-net-transport-backoff",
+		Output: counter,
+		Level:  hclog.DefaultLevel,
+	})
+	trans, cleanup, err := newTestTransportWithLogger(logger)
+	defer cleanup()
+	require.Nil(t, err)
+	trans.listener.Close()
+	<-time.After(4 * time.Second)
+	trans.Close()
+	require.True(t, (numErr > 9) && (numErr < 12))
 }

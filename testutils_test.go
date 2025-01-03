@@ -54,23 +54,41 @@ func newTestTransport(addr string) (*netTransport, error) {
 	return newNetTransport(config, logger)
 }
 
+func combineCleanup(cleanups ...func()) func() {
+	return func() {
+		for _, f := range cleanups {
+			f()
+		}
+	}
+}
+
+func newTestTransportWithLogger(logger hclog.Logger) (*netTransport, func(), error) {
+	addresses := newTestAddressesWithSameIP()
+	cleanup1 := addresses.cleanup
+	addr := addresses.next()
+	config := testTransportConfigFromAddr(addr)
+	trans, err := newNetTransport(config, logger)
+	if err != nil {
+		return nil, cleanup1, err
+	}
+	return trans, combineCleanup(cleanup1, trans.Close), nil
+}
+
 func twoTestTransport() (*netTransport, *netTransport, func(), error) {
 	addresses := newTestAddressesWithSameIP()
+	cleanup1 := addresses.cleanup
 	addr1 := addresses.next()
 	trans1, err := newTestTransport(addr1)
 	if err != nil {
-		return nil, nil, addresses.cleanup, err
+		return nil, nil, cleanup1, err
 	}
+	cleanup2 := combineCleanup(cleanup1, trans1.Close)
 	addr2 := addresses.next()
 	trans2, err := newTestTransport(addr2)
 	if err != nil {
-		return nil, nil, addresses.cleanup, err
+		return nil, nil, cleanup2, err
 	}
-	return trans1, trans2, func() {
-		trans2.Close()
-		trans1.Close()
-		addresses.cleanup()
-	}, nil
+	return trans1, trans2, combineCleanup(cleanup2, trans2.Close), nil
 }
 
 func getTestAppendEntriesRequestResponse(leader string) (*AppendEntriesRequest, *AppendEntriesResponse) {
