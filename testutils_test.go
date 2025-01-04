@@ -114,3 +114,12 @@ func getTestAppendEntriesRequestResponse(leader string) (*AppendEntriesRequest, 
 	}
 	return req, resp
 }
+
+func tryGetNotify(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
