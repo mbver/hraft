@@ -34,7 +34,6 @@ func isReadOnly(opts *bolt.Options) bool {
 	return opts != nil && opts.ReadOnly
 }
 
-// NewBoltStore takes a file path and returns a connected Raft backend.
 func NewBoltStore(path string, opts *bolt.Options, buckets [][]byte) (*BoltStore, error) {
 	db, err := bolt.Open(path, dbFileMode, opts)
 	if err != nil {
@@ -210,6 +209,19 @@ func (s *LogStore) Close() error {
 type KVStore struct {
 	bucket []byte
 	bolt   *BoltStore
+}
+
+func NewKVStore(bolt *BoltStore, bucket []byte) (*KVStore, error) {
+	if !bolt.db.IsReadOnly() {
+		err := bolt.setupBuckets([][]byte{bucket})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &KVStore{
+		bucket: bucket,
+		bolt:   bolt,
+	}, nil
 }
 
 func (kv *KVStore) Set(k, v []byte) error {

@@ -157,3 +157,10 @@ func newTestStoreWithOpts(opts *bolt.Options) (*BoltStore, func(), error) {
 	cleanup1 := combineCleanup(func() { store.Close() }, cleanup)
 	return store, cleanup1, nil
 }
+
+func createTestLog(idx uint64, data string) *Log {
+	return &Log{
+		Idx:  idx,
+		Data: []byte(data),
+	}
+}
