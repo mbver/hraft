@@ -14,9 +14,9 @@ import (
 	"github.com/hashicorp/go-msgpack/codec"
 )
 
-type msgType uint8
-
 const DefaultTimeoutScale = 256 * 1024
+
+type msgType uint8
 
 const (
 	appendEntriesMsgType = iota

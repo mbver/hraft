@@ -84,6 +84,19 @@ type LogStore struct {
 	bolt   *BoltStore
 }
 
+func NewLogStore(bolt *BoltStore, bucket []byte) (*LogStore, error) {
+	if !bolt.db.IsReadOnly() {
+		err := bolt.setupBuckets([][]byte{bucket})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &LogStore{
+		bucket: bucket,
+		bolt:   bolt,
+	}, nil
+}
+
 func (s *LogStore) FirstIdx() (uint64, error) {
 	tx, err := s.bolt.db.Begin(false)
 	if err != nil {

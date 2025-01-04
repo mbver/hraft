@@ -3,9 +3,12 @@ package hraft
 import (
 	"fmt"
 	"net"
+	"os"
 	"strconv"
+	"testing"
 	"time"
 
+	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/mbver/mlist/testaddr"
 )
@@ -122,4 +125,35 @@ func tryGetNotify(ch chan struct{}) bool {
 	default:
 		return false
 	}
+}
+
+var testBoltStore *BoltStore
+
+func TestMain(t *testing.M) {
+	fh, err := os.CreateTemp("", "bolt")
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(fh.Name())
+
+	testBoltStore, err = NewBoltStore(fh.Name(), nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	t.Run()
+}
+
+func newTestStoreWithOpts(opts *bolt.Options) (*BoltStore, func(), error) {
+	cleanup := func() {}
+	fh, err := os.CreateTemp("", "bolt")
+	if err != nil {
+		return nil, cleanup, err
+	}
+	cleanup = func() { os.Remove(fh.Name()) }
+	store, err := NewBoltStore(fh.Name(), opts, nil)
+	if err != nil {
+		return nil, cleanup, err
+	}
+	cleanup1 := combineCleanup(func() { store.Close() }, cleanup)
+	return store, cleanup1, nil
 }
