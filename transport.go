@@ -143,7 +143,7 @@ func isValidAdvertiseAddr(a string) error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || ip.IsUnspecified() {
-		return fmt.Errorf("invalid host %s", host)
+		return fmt.Errorf("invalid advertise address %s", host)
 	}
 	return nil
 }
