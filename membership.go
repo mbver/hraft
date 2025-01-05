@@ -70,6 +70,20 @@ type membership struct {
 	committedIdx   uint64
 }
 
+func newMembership(localID string, peerIDs []string) *membership {
+	peers := make([]*peer, len(peerIDs))
+	for i, id := range peerIDs {
+		peers[i] = &peer{id, roleVoter}
+	}
+	return &membership{
+		local:          &peer{localID, roleVoter},
+		latestPeers:    peers,
+		lastestIdx:     0,
+		committedPeers: peers,
+		committedIdx:   0,
+	}
+}
+
 func (m *membership) getLocal() *peer {
 	m.l.Lock()
 	defer m.l.Unlock()

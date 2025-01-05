@@ -3,6 +3,9 @@ package hraft
 import "time"
 
 type Config struct {
+	TransportConfig    *NetTransportConfig
+	LocalID            string
+	InitalPeers        []string
 	ElectionTimeout    time.Duration
 	HeartbeatTimeout   time.Duration
 	CommitSyncInterval time.Duration

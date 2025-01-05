@@ -34,8 +34,8 @@ func (a *testAddressesWithSameIP) next() string {
 	return net.JoinHostPort(a.ip.String(), strconv.Itoa(a.port))
 }
 
-func testTransportConfigFromAddr(addr string) *netTransportConfig {
-	return &netTransportConfig{
+func testTransportConfigFromAddr(addr string) *NetTransportConfig {
+	return &NetTransportConfig{
 		BindAddr:     addr,
 		Timeout:      2 * time.Second,
 		TimeoutScale: DefaultTimeoutScale,
@@ -163,4 +163,57 @@ func createTestLog(idx uint64, data string) *Log {
 		Idx:  idx,
 		Data: []byte(data),
 	}
+}
+
+func defaultTestConfig(addr string, peers []string) *Config {
+	return &Config{
+		TransportConfig: testTransportConfigFromAddr(addr),
+		InitalPeers:     peers,
+	}
+}
+
+type cluster struct {
+	rafts []*Raft
+}
+
+func (c *cluster) add(raft *Raft) {
+	c.rafts = append(c.rafts, raft)
+}
+
+func createTestCluster(n int) (*cluster, func(), error) {
+	addrSource := newTestAddressesWithSameIP()
+	cleanup := addrSource.cleanup
+	addresses := make([]string, n)
+	var cluster *cluster
+	for i := 0; i < n; i++ {
+		addresses[i] = addrSource.next()
+	}
+
+	for _, addr := range addresses {
+		currentCleanup := cleanup
+		b := &RaftBuilder{}
+		conf := defaultTestConfig(addr, addresses)
+		b.WithConfig(conf)
+		logStore, err := NewLogStore(testBoltStore, []byte("log_"+addr))
+		if err != nil {
+			return nil, cleanup, err
+		}
+		b.WithLogStore(logStore)
+
+		kvStore, err := NewKVStore(testBoltStore, []byte("kv_"+addr))
+		if err != nil {
+			return nil, cleanup, err
+		}
+		b.WithKVStore(kvStore)
+
+		b.WithLogger(newTestLogger(addr))
+
+		raft, err := b.Build()
+		if err != nil {
+			return nil, cleanup, err
+		}
+		cluster.add(raft)
+		cleanup = combineCleanup(raft.Shutdown, currentCleanup)
+	}
+	return cluster, cleanup, nil
 }

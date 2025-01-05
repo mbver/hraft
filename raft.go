@@ -62,6 +62,11 @@ type Raft struct {
 	shutdown           *ProtectedChan
 }
 
+func (r *Raft) Shutdown() {
+	r.shutdown.Close()
+	r.transport.Close()
+}
+
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
 	for {

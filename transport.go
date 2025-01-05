@@ -112,7 +112,7 @@ func (p *peerConn) readResp(res interface{}) error {
 	return p.dec.Decode(res)
 }
 
-type netTransportConfig struct {
+type NetTransportConfig struct {
 	BindAddr      string
 	AdvertiseAddr string
 	Timeout       time.Duration
@@ -121,7 +121,7 @@ type netTransportConfig struct {
 }
 
 type netTransport struct {
-	config   *netTransportConfig
+	config   *NetTransportConfig
 	logger   hclog.Logger
 	closed   *ProtectedChan
 	connPool map[string][]*peerConn
@@ -148,7 +148,7 @@ func isValidAdvertiseAddr(a string) error {
 	return nil
 }
 
-func newNetTransport(config *netTransportConfig, logger hclog.Logger) (*netTransport, error) {
+func newNetTransport(config *NetTransportConfig, logger hclog.Logger) (*netTransport, error) {
 	l, err := net.Listen("tcp", config.BindAddr)
 	if err != nil {
 		return nil, err

@@ -30,6 +30,10 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 	b.logger = logger
 }
 
+func (b *RaftBuilder) Build() (*Raft, error) {
+	return nil, nil
+}
+
 func NewStateMap(r *Raft) map[RaftStateType]State {
 	m := map[RaftStateType]State{}
 	m[followerStateType] = NewFollower(r)
