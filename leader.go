@@ -7,8 +7,8 @@ import (
 )
 
 type Leader struct {
-	term           uint64
 	l              sync.Mutex
+	term           uint64
 	raft           *Raft
 	active         bool
 	commit         *commitControl
@@ -26,6 +26,18 @@ func NewLeader(r *Raft) *Leader {
 	}
 	l.stepdown.Close()
 	return l
+}
+
+func (l *Leader) getTerm() uint64 {
+	l.l.Lock()
+	defer l.l.Unlock()
+	return l.term
+}
+
+func (l *Leader) setTerm(term uint64) {
+	l.l.Lock()
+	defer l.l.Unlock()
+	l.term = term
 }
 
 func (l *Leader) StepUp() {
@@ -59,12 +71,13 @@ func (l *Leader) Stepdown() {
 func (l *Leader) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case followerStateType:
-		if trans.Term > l.term {
+		term := l.getTerm()
+		if trans.Term > term {
 			l.Stepdown() // wait for all goros stop?
 			l.raft.setTerm(trans.Term)
 			l.raft.setStateType(followerStateType)
 		}
-		if trans.Term == l.term {
+		if trans.Term == term {
 			panic("two leaders of the same term!")
 		}
 	}
@@ -122,7 +135,7 @@ type Apply struct {
 
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
-	term := l.term
+	term := l.getTerm()
 	lastIndex := l.raft.instate.getLastIdx() // ???
 
 	n := len(applies)

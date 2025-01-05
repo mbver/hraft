@@ -46,7 +46,7 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 		}
 		// win election
 		leader := c.raft.getLeaderState()
-		leader.term = c.getTerm()
+		leader.setTerm(c.getTerm())
 		leader.StepUp()
 		c.raft.setStateType(leaderStateType)
 	}
