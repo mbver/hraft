@@ -62,12 +62,12 @@ func validatePeers(peers []*peer) error {
 }
 
 type membership struct {
-	l            sync.Mutex
-	local        *peer
-	latest       []*peer
-	lastestIdx   uint64
-	commited     []*peer
-	committedIdx uint64
+	l              sync.Mutex
+	local          *peer
+	latestPeers    []*peer
+	lastestIdx     uint64
+	committedPeers []*peer
+	committedIdx   uint64
 }
 
 func (m *membership) getLocal() *peer {
@@ -80,7 +80,7 @@ func (m *membership) getVoters() []string {
 	m.l.Lock()
 	defer m.l.Unlock()
 	voters := []string{}
-	for _, p := range m.latest {
+	for _, p := range m.latestPeers {
 		if p.role != roleVoter {
 			continue
 		}
@@ -91,7 +91,7 @@ func (m *membership) getVoters() []string {
 
 func (m *membership) validate() {
 	numStaging := 0
-	for _, p := range m.latest {
+	for _, p := range m.latestPeers {
 		if p.isStaging() {
 			numStaging++
 		}
@@ -100,7 +100,7 @@ func (m *membership) validate() {
 		panic(fmt.Errorf("only 1 staging peer is allowed, got %d", numStaging))
 	}
 	numStaging = 0
-	for _, p := range m.commited {
+	for _, p := range m.committedPeers {
 		if p.isStaging() {
 			numStaging++
 		}
@@ -113,7 +113,7 @@ func (m *membership) validate() {
 func (m *membership) getStaging() string {
 	m.l.Lock()
 	defer m.l.Unlock()
-	for _, p := range m.latest {
+	for _, p := range m.latestPeers {
 		if p.role == roleStaging {
 			return p.id
 		}
@@ -124,7 +124,7 @@ func (m *membership) getStaging() string {
 func (m *membership) getPeer(id string) peerRole {
 	m.l.Lock()
 	defer m.l.Unlock()
-	for _, p := range m.latest {
+	for _, p := range m.latestPeers {
 		if p.id == id {
 			return p.role
 		}
@@ -135,8 +135,8 @@ func (m *membership) getPeer(id string) peerRole {
 func (m *membership) peers() []string {
 	m.l.Lock()
 	defer m.l.Unlock()
-	mems := make([]string, 0, len(m.latest)-1)
-	for _, p := range m.latest {
+	mems := make([]string, 0, len(m.latestPeers)-1)
+	for _, p := range m.latestPeers {
 		mems = append(mems, p.id)
 	}
 	return mems
@@ -145,13 +145,13 @@ func (m *membership) peers() []string {
 func (m *membership) getLatest() []*peer {
 	m.l.Lock()
 	defer m.l.Unlock()
-	return copyPeers(m.latest)
+	return copyPeers(m.latestPeers)
 }
 
 func (m *membership) setLatest(in []*peer, idx uint64) {
 	m.l.Lock()
 	defer m.l.Unlock()
-	m.latest = copyPeers(in)
+	m.latestPeers = copyPeers(in)
 	m.lastestIdx = idx
 }
 
