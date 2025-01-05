@@ -18,8 +18,10 @@ func (f *Follower) HandleTransition(trans *Transition) {
 		}
 		f.raft.setTerm(trans.Term)
 		candidate := f.raft.getCandidateState()
+		candidate.l.Lock()
 		candidate.term = trans.Term
 		candidate.voters = f.raft.Voters()
+		candidate.l.Unlock()
 		voteCh, err := candidate.setupElection()
 		if err != nil {
 			f.raft.logger.Error("failed to setup election for candidate. transition failed", "error", err)

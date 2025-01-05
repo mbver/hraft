@@ -1,6 +1,9 @@
 package hraft
 
+import "sync"
+
 type Candidate struct {
+	l      sync.Mutex
 	term   uint64
 	voters []string
 	raft   *Raft
@@ -14,22 +17,36 @@ func NewCandidate(r *Raft) *Candidate {
 	}
 }
 
+func (c *Candidate) getTerm() uint64 {
+	c.l.Lock()
+	defer c.l.Unlock()
+	return c.term
+}
+
+func (c *Candidate) getVoters() []string {
+	c.l.Lock()
+	defer c.l.Unlock()
+	res := make([]string, len(c.voters))
+	copy(res, c.voters)
+	return res
+}
+
 func (c *Candidate) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case followerStateType:
-		if trans.Term < c.term {
+		if trans.Term < c.getTerm() {
 			return
 		}
 		c.cancel.Close()
 		c.raft.setTerm(trans.Term)
 		c.raft.setStateType(followerStateType)
 	case leaderStateType:
-		if trans.Term != c.term { // can this happen?
+		if trans.Term != c.getTerm() { // can this happen?
 			return
 		}
 		// win election
 		leader := c.raft.getLeaderState()
-		leader.term = c.term
+		leader.term = c.getTerm()
 		leader.StepUp()
 		c.raft.setStateType(leaderStateType)
 	}
@@ -55,8 +72,8 @@ type voteResult struct {
 // setup must be done before running election and collecting votes
 func (c *Candidate) setupElection() (chan *voteResult, error) {
 	c.cancel.Reset()
-	voteCh := make(chan *voteResult, len(c.voters))
-	if err := c.raft.persistVote(c.term, []byte(c.raft.ID())); err != nil {
+	voteCh := make(chan *voteResult, len(c.getVoters()))
+	if err := c.raft.persistVote(c.getTerm(), []byte(c.raft.ID())); err != nil {
 		return nil, err
 	}
 	voteCh <- &voteResult{
@@ -79,7 +96,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 		LastLogTerm: lastTerm,
 	}
 
-	for _, addr := range c.voters {
+	for _, addr := range c.getVoters() {
 		if addr == c.raft.ID() {
 			continue
 		}
@@ -100,12 +117,12 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 
 	// collecting votes
 	voteGranted := 0
-	voteNeeded := len(c.voters)/2 + 1
+	voteNeeded := len(c.getVoters())/2 + 1
 	electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout) // ===== ELECTION TIME OUT IS FROM 150-300 ms
 	for voteGranted < voteNeeded {
 		select {
 		case vote := <-voteCh:
-			if vote.Response.Term > c.term {
+			if vote.Response.Term > c.getTerm() {
 				c.raft.logger.Debug("newer term discovered, fallback to follower")
 				waitCh := c.raft.dispatchTransition(followerStateType, vote.Response.Term)
 				<-waitCh
@@ -120,7 +137,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 		case <-c.cancel.Ch():
 			return
 		case <-electionTimeoutCh: // quit election, transition back to follower
-			waitCh := c.raft.dispatchTransition(followerStateType, c.term)
+			waitCh := c.raft.dispatchTransition(followerStateType, c.getTerm())
 			<-waitCh
 			return
 		case <-c.raft.shutdownCh():
@@ -128,6 +145,6 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 		}
 	}
 	c.raft.logger.Info("election won", "tally", voteGranted)
-	waitCh := c.raft.dispatchTransition(leaderStateType, c.term)
+	waitCh := c.raft.dispatchTransition(leaderStateType, c.getTerm())
 	<-waitCh
 }
