@@ -167,8 +167,8 @@ func createTestLog(idx uint64, data string) *Log {
 
 func defaultTestConfig(addr string, peers []string) *Config {
 	return &Config{
-		TransportConfig: testTransportConfigFromAddr(addr),
-		InitalPeers:     peers,
+		LocalID:     addr,
+		InitalPeers: peers,
 	}
 }
 
@@ -179,6 +179,10 @@ type cluster struct {
 func (c *cluster) add(raft *Raft) {
 	c.rafts = append(c.rafts, raft)
 }
+
+type discardApplier struct{}
+
+func (a *discardApplier) Apply([]*Commit) {}
 
 func createTestCluster(n int) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
@@ -194,6 +198,8 @@ func createTestCluster(n int) (*cluster, func(), error) {
 		b := &RaftBuilder{}
 		conf := defaultTestConfig(addr, addresses)
 		b.WithConfig(conf)
+		b.WithTransportConfig(testTransportConfigFromAddr(addr))
+
 		logStore, err := NewLogStore(testBoltStore, []byte("log_"+addr))
 		if err != nil {
 			return nil, cleanup, err
@@ -208,6 +214,10 @@ func createTestCluster(n int) (*cluster, func(), error) {
 
 		b.WithLogger(newTestLogger(addr))
 
+		b.appState = &AppState{
+			mutateCh: make(chan []*Commit),
+			state:    &discardApplier{},
+		}
 		raft, err := b.Build()
 		if err != nil {
 			return nil, cleanup, err
