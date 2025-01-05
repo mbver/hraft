@@ -48,24 +48,22 @@ func (r *peerReplication) run() {
 	for {
 		select {
 		case <-r.stopCh:
-			lastLogIdx, _ := r.raft.getLastLog()
-			r.replicate(lastLogIdx)
+			r.replicate()
 			return
 		case <-r.stepdown.Ch():
 			return
 		case <-r.raft.shutdownCh():
 			return
 		case <-r.logAddedCh:
-			lastLogIdx, _ := r.raft.getLastLog()
-			r.replicate(lastLogIdx)
+			r.replicate()
 		case <-jitterTimeoutCh(r.raft.config.CommitSyncInterval):
-			lastLogIdx, _ := r.raft.getLastLog()
-			r.replicate(lastLogIdx)
+			r.replicate()
 		}
 	}
 }
 
-func (r *peerReplication) replicate(uptoIdx uint64) {
+func (r *peerReplication) replicate() {
+	uptoIdx, _ := r.raft.getLastLog()
 	<-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10)
 	nextIdx := r.getNextIdx()
 	for nextIdx < uptoIdx && !r.stepdown.IsClosed() {
