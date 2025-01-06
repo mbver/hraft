@@ -143,8 +143,7 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
 		select {
-		case <-time.After(r.raft.config.HeartbeatTimeout):
-			<-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10)
+		case <-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10):
 		case <-r.pulseCh:
 		case <-stopCh:
 			return

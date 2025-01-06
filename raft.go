@@ -46,7 +46,7 @@ func newTransition(to RaftStateType, term uint64) *Transition {
 }
 
 func (t *Transition) String() string {
-	return fmt.Sprintf("{To: %s, Term: %d", t.To, t.Term)
+	return fmt.Sprintf("{To: %s, Term: %d}", t.To, t.Term)
 }
 
 type State interface {

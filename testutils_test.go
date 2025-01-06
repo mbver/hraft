@@ -171,7 +171,7 @@ func defaultTestConfig(addr string, peers []string) *Config {
 		InitalPeers:        peers,
 		ElectionTimeout:    100 * time.Millisecond,
 		HeartbeatTimeout:   100 * time.Millisecond,
-		CommitSyncInterval: 10 * time.Millisecond,
+		CommitSyncInterval: 20 * time.Millisecond,
 		MaxAppendEntries:   64,
 	}
 }
