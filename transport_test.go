@@ -244,6 +244,7 @@ func (w *countWriter) Write(p []byte) (n int, err error) {
 }
 
 func TestNetTransport_ListenBackoff(t *testing.T) {
+	t.Parallel()
 	var numErr int32
 	counter := &countWriter{
 		t:        t,

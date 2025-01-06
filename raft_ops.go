@@ -7,6 +7,17 @@ import (
 	"sync/atomic"
 )
 
+func (r *Raft) handleRPC(rpc *RPC) {
+	switch req := rpc.command.(type) {
+	case *AppendEntriesRequest:
+		r.handleAppendEntries(rpc, req)
+	case *VoteRequest:
+		r.handleRequestVote(rpc, req)
+	default:
+
+	}
+}
+
 func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	resp := &AppendEntriesResponse{
 		Term:               r.getTerm(),
@@ -265,7 +276,7 @@ func (r *Raft) persistVote(term uint64, candidate []byte) error {
 	return nil
 }
 
-func (r *Raft) handleRequestVote(rpc RPC, req *VoteRequest) {
+func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 	if !r.membership.getLocal().isVoter() { // non-voter node don't involve request vote
 		return
 	}

@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"errors"
+	"fmt"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
@@ -18,6 +19,18 @@ const (
 	leaderStateType
 )
 
+func (t RaftStateType) String() string {
+	switch t {
+	case followerStateType:
+		return "follower"
+	case candidateStateType:
+		return "candidate"
+	case leaderStateType:
+		return "leader"
+	}
+	return "unknown state type"
+}
+
 type Transition struct {
 	To     RaftStateType
 	Term   uint64
@@ -32,10 +45,13 @@ func newTransition(to RaftStateType, term uint64) *Transition {
 	}
 }
 
+func (t *Transition) String() string {
+	return fmt.Sprintf("{To: %s, Term: %d", t.To, t.Term)
+}
+
 type State interface {
 	HandleTransition(*Transition)
 	HandleHeartbeatTimeout()
-	HandleRPC(*RPC)
 	HandleApply(*Apply)
 	HandleCommitNotify()
 	HandleMembershipChange(*membershipChange)
@@ -72,7 +88,7 @@ func (r *Raft) receiveMsgs() {
 	for {
 		select {
 		case rpc := <-r.rpchCh:
-			r.getState().HandleRPC(rpc)
+			r.handleRPC(rpc)
 		case apply := <-r.applyCh:
 			r.getState().HandleApply(apply)
 		case <-r.commitNotifyCh:
@@ -80,14 +96,13 @@ func (r *Raft) receiveMsgs() {
 		case change := <-r.membershipChangeCh:
 			r.getState().HandleMembershipChange(change)
 		case <-r.heartbeatTimeout.getCh():
-			if r.heartbeatTimeout.isFresh() { // heartTimeout is reset, keep going
-				continue
-			}
 			if !r.membership.getLocal().isVoter() { // non-voter node will not transition to candidate
 				r.heartbeatTimeout.reset()
 				continue
 			}
 			r.getState().HandleHeartbeatTimeout()
+		case <-r.heartbeatTimeout.getResetNotifyCh():
+			continue
 		case <-r.shutdownCh():
 			return
 		}
@@ -99,7 +114,7 @@ func (r *Raft) receiveHeartbeat() {
 	for {
 		select {
 		case req := <-r.heartbeatCh:
-			r.getState().HandleRPC(req)
+			r.handleRPC(req)
 		case <-r.shutdownCh():
 			return
 		}
@@ -111,6 +126,7 @@ func (r *Raft) receiveTransitions() {
 	for {
 		select {
 		case transition := <-r.transitionCh:
+			r.logger.Info("receive transition msg", "transition", transition.String())
 			r.getState().HandleTransition(transition)
 			close(transition.DoneCh)
 		case <-r.shutdownCh():

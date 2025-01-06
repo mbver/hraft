@@ -37,7 +37,7 @@ func (a *testAddressesWithSameIP) next() string {
 func testTransportConfigFromAddr(addr string) *NetTransportConfig {
 	return &NetTransportConfig{
 		BindAddr:     addr,
-		Timeout:      2 * time.Second,
+		Timeout:      500 * time.Millisecond,
 		TimeoutScale: DefaultTimeoutScale,
 		PoolSize:     2,
 	}
@@ -167,8 +167,12 @@ func createTestLog(idx uint64, data string) *Log {
 
 func defaultTestConfig(addr string, peers []string) *Config {
 	return &Config{
-		LocalID:     addr,
-		InitalPeers: peers,
+		LocalID:            addr,
+		InitalPeers:        peers,
+		ElectionTimeout:    100 * time.Millisecond,
+		HeartbeatTimeout:   100 * time.Millisecond,
+		CommitSyncInterval: 10 * time.Millisecond,
+		MaxAppendEntries:   64,
 	}
 }
 
@@ -188,16 +192,14 @@ func createTestCluster(n int) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	cleanup := addrSource.cleanup
 	addresses := make([]string, n)
-	var cluster *cluster
 	for i := 0; i < n; i++ {
 		addresses[i] = addrSource.next()
 	}
-
+	cluster := &cluster{}
 	for _, addr := range addresses {
 		currentCleanup := cleanup
 		b := &RaftBuilder{}
-		conf := defaultTestConfig(addr, addresses)
-		b.WithConfig(conf)
+		b.WithConfig(defaultTestConfig(addr, addresses))
 		b.WithTransportConfig(testTransportConfigFromAddr(addr))
 
 		logStore, err := NewLogStore(testBoltStore, []byte("log_"+addr))

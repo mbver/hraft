@@ -160,10 +160,9 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 	}
 }
 
+// require caller holds lock
 func (l *Leader) startReplication() {
 	lastIdx := l.raft.instate.getLastIdx() // will negotiate to older value with follower
-	l.l.Lock()
-	defer l.l.Unlock()
 	for _, addr := range l.raft.Peers() {
 		if addr == l.raft.ID() {
 			continue

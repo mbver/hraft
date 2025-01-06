@@ -3,12 +3,13 @@ package hraft
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Leader struct {
-	l              sync.Mutex
 	term           uint64
+	l              sync.Mutex
 	raft           *Raft
 	active         bool
 	commit         *commitControl
@@ -29,15 +30,11 @@ func NewLeader(r *Raft) *Leader {
 }
 
 func (l *Leader) getTerm() uint64 {
-	l.l.Lock()
-	defer l.l.Unlock()
-	return l.term
+	return atomic.LoadUint64(&l.term)
 }
 
 func (l *Leader) setTerm(term uint64) {
-	l.l.Lock()
-	defer l.l.Unlock()
-	l.term = term
+	atomic.StoreUint64(&l.term, term)
 }
 
 func (l *Leader) StepUp() {
@@ -87,8 +84,6 @@ func (l *Leader) HandleTransition(trans *Transition) {
 
 // heartbeatTimeout is blocked in leader state
 func (l *Leader) HandleHeartbeatTimeout() {}
-
-func (l *Leader) HandleRPC(rpc *RPC) {}
 
 func (l *Leader) HandleNewCommit() {
 	commitIdx := l.commit.getCommitIdx()
@@ -194,7 +189,9 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) { // return er
 	}})
 	l.raft.membership.setLatest(peers, log.Idx)
 	l.commit.updateVoters(l.raft.Voters())
+	l.l.Lock()
 	l.startReplication()
+	l.l.Unlock()
 	switch change.changeType {
 	case addStaging:
 		l.staging.stage(change.addr)

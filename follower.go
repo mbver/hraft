@@ -16,6 +16,7 @@ func (f *Follower) HandleTransition(trans *Transition) {
 		if trans.Term <= f.raft.getTerm() {
 			return
 		}
+		f.raft.logger.Info("transitioning to candidate", "transition", trans.String())
 		f.raft.setTerm(trans.Term)
 		candidate := f.raft.getCandidateState()
 		candidate.l.Lock()
@@ -39,11 +40,10 @@ func (f *Follower) HandleTransition(trans *Transition) {
 func (f *Follower) HandleHeartbeatTimeout() {
 	f.raft.heartbeatTimeout.block()
 	term := f.raft.getTerm() + 1
+	f.raft.logger.Info("heartbeat timeout, transition to candidate")
 	waitCh := f.raft.dispatchTransition(candidateStateType, term)
 	<-waitCh
 }
-
-func (f *Follower) HandleRPC(rpc *RPC) {}
 
 func (f *Follower) HandleApply(a *Apply) {}
 

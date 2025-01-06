@@ -1,6 +1,8 @@
 package hraft
 
-import "sync"
+import (
+	"sync"
+)
 
 type Candidate struct {
 	l      sync.Mutex
@@ -40,6 +42,7 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 		c.cancel.Close()
 		c.raft.setTerm(trans.Term)
 		c.raft.setStateType(followerStateType)
+		c.raft.heartbeatTimeout.reset()
 	case leaderStateType:
 		if trans.Term != c.getTerm() { // can this happen?
 			return
@@ -54,8 +57,6 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 
 // heartbeat timeout is blocked in candidate state
 func (c *Candidate) HandleHeartbeatTimeout() {}
-
-func (c *Candidate) HandleRPC(rpc *RPC) {}
 
 func (c *Candidate) HandleApply(a *Apply) {}
 
@@ -102,7 +103,10 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 		}
 		go func() {
 			// need wg??
-			res := &voteResult{VoterId: addr}
+			res := &voteResult{
+				VoterId:  addr,
+				Response: &VoteResponse{},
+			}
 			err := c.raft.transport.RequestVote(addr, req, res.Response)
 			if err != nil {
 				c.raft.logger.Error("failed to make requestVote RPC",
