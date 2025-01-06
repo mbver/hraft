@@ -121,11 +121,14 @@ type NetTransportConfig struct {
 }
 
 type netTransport struct {
-	config   *NetTransportConfig
-	logger   hclog.Logger
-	closed   *ProtectedChan
-	connPool map[string][]*peerConn
-	poolL    sync.Mutex
+	wg            sync.WaitGroup
+	config        *NetTransportConfig
+	logger        hclog.Logger
+	closed        *ProtectedChan
+	connPool      map[string][]*peerConn
+	poolL         sync.Mutex
+	receivedConns map[net.Conn]struct{}
+	receivedConnL sync.Mutex
 	// seems no need for context, just use shutdownCh
 	listener    net.Listener
 	heartbeatCh chan *RPC
@@ -161,13 +164,14 @@ func newNetTransport(config *NetTransportConfig, logger hclog.Logger) (*netTrans
 		return nil, err
 	}
 	t := &netTransport{
-		config:      config,
-		logger:      logger,
-		closed:      newProtectedChan(),
-		connPool:    map[string][]*peerConn{},
-		listener:    l,
-		heartbeatCh: make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
-		rpcCh:       make(chan *RPC), // ======= do we buffer?
+		config:        config,
+		logger:        logger,
+		closed:        newProtectedChan(),
+		connPool:      map[string][]*peerConn{},
+		receivedConns: map[net.Conn]struct{}{},
+		listener:      l,
+		heartbeatCh:   make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
+		rpcCh:         make(chan *RPC), // ======= do we buffer?
 	}
 	go t.listen()
 	return t, nil
@@ -223,7 +227,17 @@ func (t *netTransport) Close() {
 	}
 	t.closed.Close()
 	t.listener.Close()
+	t.ClearReceivedConns()
 	t.ClearPool()
+	t.wg.Wait()
+}
+
+func (t *netTransport) ClearReceivedConns() {
+	t.receivedConnL.Lock()
+	defer t.receivedConnL.Unlock()
+	for conn := range t.receivedConns {
+		conn.Close()
+	}
 }
 
 func (t *netTransport) ClearPool() {
@@ -291,6 +305,8 @@ func (t *netTransport) returnConn(conn *peerConn) {
 }
 
 func (t *netTransport) listen() {
+	t.wg.Add(1)
+	defer t.wg.Done()
 	backoff := newBackoff(5*time.Millisecond, time.Second)
 	for {
 		conn, err := t.listener.Accept()
@@ -304,15 +320,25 @@ func (t *netTransport) listen() {
 				continue
 			}
 		}
+		t.receivedConnL.Lock()
+		t.receivedConns[conn] = struct{}{}
+		t.receivedConnL.Unlock()
 		backoff.reset()
 		t.logger.Debug("accepted connection", "local-address", t.LocalAddr(), "remote-addr", conn.RemoteAddr().String())
 
-		go t.handleConn(conn) // the mess of stream and context. DO WE NEED TO USE WAITGROUP FOR THIS? WILL IT DEADLOCK? CAN JUST IGNORE THIS!
+		go t.handleConn(conn)
 	}
 }
 
 func (t *netTransport) handleConn(conn net.Conn) {
-	defer conn.Close()
+	t.wg.Add(1)
+	defer t.wg.Done()
+	defer func() {
+		conn.Close()
+		t.receivedConnL.Lock()
+		delete(t.receivedConns, conn)
+		t.receivedConnL.Unlock()
+	}()
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 	dec := codec.NewDecoder(r, &codec.MsgpackHandle{})

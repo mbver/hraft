@@ -12,5 +12,5 @@ func TestCluster_StartStop(t *testing.T) {
 	_, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(4 * time.Second)
+	time.Sleep(2 * time.Second)
 }

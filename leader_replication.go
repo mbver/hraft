@@ -41,6 +41,8 @@ func (r *peerReplication) setNextIdx(idx uint64) {
 }
 
 func (r *peerReplication) run() {
+	r.raft.wg.Add(1)
+	defer r.raft.wg.Done()
 	// Start an async heartbeating routing
 	stopHeartbeatCh := make(chan struct{})
 	defer close(stopHeartbeatCh)
@@ -130,6 +132,8 @@ func (r *peerReplication) replicate() {
 }
 
 func (r *peerReplication) heartbeat(stopCh chan struct{}) {
+	r.raft.wg.Add(1)
+	defer r.raft.wg.Done()
 	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
 	req := AppendEntriesRequest{
 		Term:   r.currentTerm,
@@ -140,6 +144,7 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		select {
 		case <-time.After(backoff.getValue()):
 		case <-stopCh:
+			return
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
 		select {

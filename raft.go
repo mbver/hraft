@@ -3,6 +3,7 @@ package hraft
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
@@ -75,16 +76,20 @@ type Raft struct {
 	membershipChangeCh chan *membershipChange
 	transitionCh       chan *Transition
 	heartbeatTimeout   *heartbeatTimeout
+	wg                 sync.WaitGroup
 	shutdown           *ProtectedChan
 }
 
 func (r *Raft) Shutdown() {
 	r.shutdown.Close()
 	r.transport.Close()
+	r.wg.Wait()
 }
 
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
+	r.wg.Add(1)
+	defer r.wg.Done()
 	for {
 		select {
 		case rpc := <-r.rpchCh:
@@ -111,6 +116,8 @@ func (r *Raft) receiveMsgs() {
 
 // fast path for heartbeat msgs
 func (r *Raft) receiveHeartbeat() {
+	r.wg.Add(1)
+	defer r.wg.Done()
 	for {
 		select {
 		case req := <-r.heartbeatCh:
@@ -123,6 +130,8 @@ func (r *Raft) receiveHeartbeat() {
 
 // handle state transition
 func (r *Raft) receiveTransitions() {
+	r.wg.Add(1)
+	defer r.wg.Done()
 	for {
 		select {
 		case transition := <-r.transitionCh:
@@ -137,6 +146,8 @@ func (r *Raft) receiveTransitions() {
 
 // handle commits to apply on app state machine
 func (r *Raft) receiveMutations() {
+	r.wg.Add(1)
+	defer r.wg.Done()
 	select {
 	case commits := <-r.appstate.mutateCh:
 		r.appstate.state.Apply(commits)
