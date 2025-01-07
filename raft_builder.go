@@ -6,8 +6,8 @@ type RaftBuilder struct {
 	config          *Config
 	transportConfig *NetTransportConfig
 	appState        *AppState
-	logStore        *LogStore
-	kvStore         *KVStore
+	logStore        LogStore
+	kvStore         KVStore
 	logger          hclog.Logger
 }
 
@@ -23,11 +23,11 @@ func (b *RaftBuilder) WithAppState(a *AppState) {
 	b.appState = a
 }
 
-func (b *RaftBuilder) WithLogStore(s *LogStore) {
+func (b *RaftBuilder) WithLogStore(s LogStore) {
 	b.logStore = s
 }
 
-func (b *RaftBuilder) WithKVStore(kv *KVStore) {
+func (b *RaftBuilder) WithKVStore(kv KVStore) {
 	b.kvStore = kv
 }
 

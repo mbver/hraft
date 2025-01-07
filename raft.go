@@ -66,8 +66,8 @@ type Raft struct {
 	instate            *internalState
 	state              RaftStateType
 	stateMap           map[RaftStateType]State
-	logs               *LogStore
-	kvs                *KVStore
+	logs               LogStore
+	kvs                KVStore
 	transport          *netTransport
 	heartbeatCh        chan *RPC
 	rpchCh             chan *RPC
