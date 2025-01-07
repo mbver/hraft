@@ -58,7 +58,9 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 // heartbeat timeout is blocked in candidate state
 func (c *Candidate) HandleHeartbeatTimeout() {}
 
-func (c *Candidate) HandleApply(a *Apply) {}
+func (c *Candidate) HandleApply(a *Apply) {
+	trySendErr(a.errCh, ErrNotLeader)
+}
 
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}

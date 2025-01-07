@@ -45,7 +45,9 @@ func (f *Follower) HandleHeartbeatTimeout() {
 	<-waitCh
 }
 
-func (f *Follower) HandleApply(a *Apply) {}
+func (f *Follower) HandleApply(a *Apply) {
+	trySendErr(a.errCh, ErrNotLeader)
+}
 
 func (f *Follower) HandleCommitNotify() {}
 

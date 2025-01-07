@@ -7,6 +7,10 @@ import (
 	"sync/atomic"
 )
 
+var (
+	ErrNotLeader = errors.New("not leader")
+)
+
 func (r *Raft) handleRPC(rpc *RPC) {
 	switch req := rpc.command.(type) {
 	case *AppendEntriesRequest:

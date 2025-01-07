@@ -95,11 +95,12 @@ func (l *Leader) HandleNewCommit() {
 		return
 	}
 	firstIdx := first.Value.(*Apply).log.Idx
+	// handle logs before stepping up
 	l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
 
 	batchSize := l.raft.config.MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
-
+	// handle logs after stepping up
 	for e := first; e != nil; e = e.Next() {
 		a := e.Value.(*Apply)
 		if a.log.Idx > commitIdx {
@@ -120,7 +121,10 @@ func (l *Leader) HandleNewCommit() {
 	l.raft.instate.setLastApplied(commitIdx)
 }
 
-func (l *Leader) HandleApply(a *Apply) {}
+func (l *Leader) HandleApply(a *Apply) {
+	// get maxAppendentries items
+	// dispatch applies
+}
 
 func (l *Leader) HandleCommitNotify() {}
 
@@ -154,7 +158,9 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 		for _, a := range applies {
 			trySendErr(a.errCh, err)
 		}
-		// TRANSITION TO FOLLOWER
+		// transition to follower
+		waitCh := l.raft.dispatchTransition(followerStateType, l.getTerm())
+		<-waitCh
 		return
 	}
 	l.commit.updateMatchIdx(l.raft.ID(), lastIndex) // ======= lastIdx is increased by applies.
