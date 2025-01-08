@@ -5,8 +5,8 @@ import "time"
 type LogType uint8
 
 const (
-	LogComand LogType = iota
-	LogMember
+	LogCommand LogType = iota
+	LogMembership
 	LogNoOp
 )
 

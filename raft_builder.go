@@ -63,7 +63,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 	go raft.receiveMsgs()
 	go raft.receiveHeartbeat()
 	go raft.receiveTransitions()
-	go raft.receiveMutations()
+	go raft.appstate.receiveMutations()
 
 	return raft, nil
 }

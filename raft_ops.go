@@ -165,6 +165,10 @@ func (r *Raft) handleNewLeaderCommit(idx uint64) {
 			r.logger.Error("failed to get log", "index", i, "error", err)
 			panic(err)
 		}
+		// no-op log is skipped
+		if l.Type == LogNoOp {
+			continue
+		}
 		batch = append(batch, &Commit{l, nil})
 		if len(batch) == batchSize {
 			r.applyCommits(batch)

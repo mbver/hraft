@@ -143,9 +143,13 @@ func (c *cluster) add(raft *Raft) {
 	c.rafts = append(c.rafts, raft)
 }
 
-type discardApplier struct{}
+type discardCommandsApplier struct{}
 
-func (a *discardApplier) Apply([]*Commit) {}
+func (a *discardCommandsApplier) ApplyCommands([]*Commit) {}
+
+type discardMembershipApplier struct{}
+
+func (m *discardMembershipApplier) ApplyMembership(*Commit) {}
 
 func createTestCluster(n int) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
@@ -166,10 +170,8 @@ func createTestCluster(n int) (*cluster, func(), error) {
 
 		b.WithLogger(newTestLogger(addr))
 
-		b.appState = &AppState{
-			mutateCh: make(chan []*Commit),
-			state:    &discardApplier{},
-		}
+		b.WithAppState(NewAppState(&discardCommandsApplier{}, &discardMembershipApplier{}, 1))
+
 		raft, err := b.Build()
 		if err != nil {
 			return nil, cleanup, err

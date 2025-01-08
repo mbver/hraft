@@ -106,6 +106,10 @@ func (l *Leader) HandleNewCommit() {
 		if a.log.Idx > commitIdx {
 			break
 		}
+		// no-op log is skipped
+		if a.log.Type == LogNoOp {
+			continue
+		}
 		batch = append(batch, &Commit{a.log, a.errCh})
 		l.inflight.Remove(e)
 		if len(batch) == batchSize {
@@ -187,7 +191,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) { // return er
 		l.raft.logger.Error("unable to encode peers", "error", err)
 	}
 	log := &Log{
-		Type: LogMember,
+		Type: LogMembership,
 		Data: encoded,
 	}
 	l.dispatchApplies([]*Apply{{

@@ -82,8 +82,9 @@ type Raft struct {
 
 func (r *Raft) Shutdown() {
 	r.shutdown.Close()
-	r.transport.Close()
 	r.wg.Wait()
+	r.appstate.Stop()
+	r.transport.Close()
 }
 
 // raft's mainloop
@@ -141,17 +142,5 @@ func (r *Raft) receiveTransitions() {
 		case <-r.shutdownCh():
 			return
 		}
-	}
-}
-
-// handle commits to apply on app state machine
-func (r *Raft) receiveMutations() {
-	r.wg.Add(1)
-	defer r.wg.Done()
-	select {
-	case commits := <-r.appstate.mutateCh:
-		r.appstate.state.Apply(commits)
-	case <-r.shutdownCh():
-		return
 	}
 }
