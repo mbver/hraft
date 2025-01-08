@@ -19,7 +19,7 @@ type AppState struct {
 
 func NewAppState(command CommandsApplier, membership MembershipApplier, batchSize int) *AppState {
 	return &AppState{
-		mutateCh:        make(chan []*Commit),
+		mutateCh:        make(chan []*Commit, 128),
 		batchSize:       batchSize,
 		commandState:    command,
 		membershipState: membership,

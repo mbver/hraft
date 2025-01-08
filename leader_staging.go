@@ -41,11 +41,11 @@ func (s *staging) stage(id string) {
 	s.stageCh <- id // TODO: have a timeout?
 }
 
-func (s *staging) promote(id string) {
+func (s *staging) promote() {
 	s.l.Lock()
 	defer s.l.Unlock()
 	s.active = false
-	s.promotedCh <- id
+	s.promotedCh <- s.id
 }
 
 // the nested loop to ensure
@@ -72,7 +72,7 @@ func (l *Leader) receiveLogSynced(stagingId string) {
 			if id != stagingId {
 				panic("staging_id not match logsync_id")
 			}
-			l.raft.membershipChangeCh <- &membershipChange{id, promotePeer}
+			l.raft.membershipChangeCh <- &membershipChange{id, promotePeer, nil}
 			l.receivePromoted(id)
 		case <-l.stepdown.Ch():
 			return

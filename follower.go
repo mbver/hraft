@@ -51,4 +51,6 @@ func (f *Follower) HandleApply(a *Apply) {
 
 func (f *Follower) HandleCommitNotify() {}
 
-func (f *Follower) HandleMembershipChange(change *membershipChange) {} // return an error??
+func (f *Follower) HandleMembershipChange(change *membershipChange) {
+	trySendErr(change.errCh, ErrNotLeader)
+}

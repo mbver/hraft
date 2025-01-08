@@ -9,8 +9,8 @@ type peerRole int8
 
 const (
 	roleStaging peerRole = iota
-	roleVoter
 	roleNonVoter
+	roleVoter
 	roleAbsent
 )
 
@@ -88,6 +88,12 @@ func (m *membership) getLocal() *peer {
 	m.l.Lock()
 	defer m.l.Unlock()
 	return m.local
+}
+
+func (m *membership) isStable() bool {
+	m.l.Lock()
+	defer m.l.Unlock()
+	return m.committedIdx == m.lastestIdx
 }
 
 func (m *membership) getVoters() []string {
@@ -181,6 +187,7 @@ type membershipChageType int8
 
 const (
 	addStaging membershipChageType = iota
+	addNonVoter
 	promotePeer
 	demotePeer
 	removePeer
@@ -190,6 +197,8 @@ func (t membershipChageType) String() string {
 	switch t {
 	case addStaging:
 		return "add_staging"
+	case addNonVoter:
+		return "add_non_voter"
 	case promotePeer:
 		return "promote_peer"
 	case demotePeer:
@@ -203,6 +212,15 @@ func (t membershipChageType) String() string {
 type membershipChange struct {
 	addr       string
 	changeType membershipChageType
+	errCh      chan error
+}
+
+func newMembershipChange(addr string, changeType membershipChageType) *membershipChange {
+	return &membershipChange{
+		addr:       addr,
+		changeType: changeType,
+		errCh:      make(chan error, 1),
+	}
 }
 
 func (m *membership) newPeersFromChange(change *membershipChange) ([]*peer, error) {
@@ -215,6 +233,17 @@ func (m *membership) newPeersFromChange(change *membershipChange) ([]*peer, erro
 			}
 		}
 		latest = append(latest, &peer{change.addr, roleStaging})
+		if err := validatePeers(latest); err != nil {
+			return nil, err
+		}
+		return latest, nil
+	case addNonVoter:
+		for _, p := range latest {
+			if p.id == change.addr {
+				return nil, fmt.Errorf("peer exists with role %s", p.role)
+			}
+		}
+		latest = append(latest, &peer{change.addr, roleNonVoter})
 		if err := validatePeers(latest); err != nil {
 			return nil, err
 		}

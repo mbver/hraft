@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 )
 
 var (
-	ErrNotLeader = errors.New("not leader")
+	ErrNotLeader          = errors.New("not leader")
+	ErrTimeout            = errors.New("timeout")
+	ErrMembershipUnstable = errors.New("membership is unstable")
 )
 
 func (r *Raft) handleRPC(rpc *RPC) {
@@ -384,4 +387,66 @@ func (r *Raft) Local() *peer {
 
 func (r *Raft) StagingPeer() string {
 	return r.membership.getStaging()
+}
+
+type Apply struct {
+	log          *Log
+	errCh        chan error
+	dispatchedAt time.Time
+}
+
+func newApply(cmd []byte) *Apply {
+	return &Apply{
+		log: &Log{
+			Type: LogCommand,
+			Data: cmd,
+		},
+	}
+}
+
+func sendToRaft[T *Apply | *membershipChange](ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{}) error {
+	select {
+	case ch <- msg:
+		return nil
+	case <-timeoutCh:
+		return ErrTimeout
+	case <-shutdownCh:
+		return ErrRaftShutdown
+	}
+}
+
+func drainErr(errCh chan error, timeoutCh <-chan time.Time, shutdownCh chan struct{}) error {
+	select {
+	case err := <-errCh:
+		return err
+	case <-timeoutCh:
+		return ErrTimeout
+	case <-shutdownCh:
+		return ErrRaftShutdown
+	}
+}
+
+func getTimeoutCh(timeout time.Duration) <-chan time.Time {
+	if timeout == 0 {
+		return nil
+	}
+	return time.After(timeout)
+}
+
+func (r *Raft) Apply(cmd []byte, timeout time.Duration) error {
+	a := newApply(cmd)
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.applyCh, a, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(a.errCh, timeoutCh, r.shutdownCh())
+}
+
+func (r *Raft) AddPeer(addr string, timeout time.Duration) error {
+	m := newMembershipChange(addr, addStaging)
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
 }

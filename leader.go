@@ -132,12 +132,6 @@ func (l *Leader) HandleApply(a *Apply) {
 
 func (l *Leader) HandleCommitNotify() {}
 
-type Apply struct {
-	log          *Log
-	errCh        chan error
-	dispatchedAt time.Time
-}
-
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
 	term := l.getTerm()
@@ -180,7 +174,11 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	l.l.Unlock()
 }
 
-func (l *Leader) HandleMembershipChange(change *membershipChange) { // return errors?
+func (l *Leader) HandleMembershipChange(change *membershipChange) {
+	if !l.raft.membership.isStable() {
+		trySendErr(change.errCh, ErrMembershipUnstable)
+		return
+	}
 	peers, err := l.raft.membership.newPeersFromChange(change)
 	if err != nil {
 		l.raft.logger.Error("unable to create new peers from change", "error", err)
@@ -195,7 +193,8 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) { // return er
 		Data: encoded,
 	}
 	l.dispatchApplies([]*Apply{{
-		log: log,
+		log:   log,
+		errCh: change.errCh,
 	}})
 	l.raft.membership.setLatest(peers, log.Idx)
 	l.commit.updateVoters(l.raft.Voters())
@@ -206,7 +205,9 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) { // return er
 	case addStaging:
 		l.staging.stage(change.addr)
 	case promotePeer:
-		l.staging.promote(change.addr)
+		if l.staging.getId() == change.addr {
+			l.staging.promote()
+		}
 	case demotePeer:
 		// TODO
 	case removePeer:

@@ -158,11 +158,17 @@ func (c *cluster) close() {
 
 type discardCommandsApplier struct{}
 
-func (a *discardCommandsApplier) ApplyCommands([]*Commit) {}
+func (a *discardCommandsApplier) ApplyCommands(commits []*Commit) {
+	for _, c := range commits {
+		trySendErr(c.ErrCh, nil)
+	}
+}
 
 type discardMembershipApplier struct{}
 
-func (m *discardMembershipApplier) ApplyMembership(*Commit) {}
+func (m *discardMembershipApplier) ApplyMembership(c *Commit) {
+	trySendErr(c.ErrCh, nil)
+}
 
 func createTestCluster(n int) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()

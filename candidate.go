@@ -65,7 +65,9 @@ func (c *Candidate) HandleApply(a *Apply) {
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}
 
-func (c *Candidate) HandleMembershipChange(change *membershipChange) {} // returns error?
+func (c *Candidate) HandleMembershipChange(change *membershipChange) {
+	trySendErr(change.errCh, ErrNotLeader)
+}
 
 type voteResult struct {
 	VoterId  string
