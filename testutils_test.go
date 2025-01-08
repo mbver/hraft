@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -136,11 +137,23 @@ func defaultTestConfig(addr string, peers []string) *Config {
 }
 
 type cluster struct {
+	wg    sync.WaitGroup
 	rafts []*Raft
 }
 
 func (c *cluster) add(raft *Raft) {
 	c.rafts = append(c.rafts, raft)
+	c.wg.Add(1)
+}
+
+func (c *cluster) close() {
+	for _, raft := range c.rafts {
+		go func() {
+			defer c.wg.Done()
+			raft.Shutdown()
+		}()
+	}
+	c.wg.Wait()
 }
 
 type discardCommandsApplier struct{}
@@ -153,14 +166,13 @@ func (m *discardMembershipApplier) ApplyMembership(*Commit) {}
 
 func createTestCluster(n int) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
-	cleanup := addrSource.cleanup
 	addresses := make([]string, n)
 	for i := 0; i < n; i++ {
 		addresses[i] = addrSource.next()
 	}
 	cluster := &cluster{}
+	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
 	for _, addr := range addresses {
-		currentCleanup := cleanup
 		b := &RaftBuilder{}
 		b.WithConfig(defaultTestConfig(addr, addresses))
 		b.WithTransportConfig(testTransportConfigFromAddr(addr))
@@ -177,7 +189,6 @@ func createTestCluster(n int) (*cluster, func(), error) {
 			return nil, cleanup, err
 		}
 		cluster.add(raft)
-		cleanup = combineCleanup(raft.Shutdown, currentCleanup)
 	}
 	return cluster, cleanup, nil
 }
