@@ -125,7 +125,7 @@ func tryGetNotify(ch chan struct{}) bool {
 	}
 }
 
-func defaultTestConfig(addr string, peers []string) *Config {
+func defaultTestConfig(addr string, peers []*Peer) *Config {
 	return &Config{
 		LocalID:            addr,
 		InitalPeers:        peers,

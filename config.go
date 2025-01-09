@@ -5,7 +5,7 @@ import "time"
 type Config struct {
 	LocalID            string
 	NoElect            bool // indicates no election occurs in the cluster
-	InitalPeers        []string
+	InitalPeers        []*Peer
 	ElectionTimeout    time.Duration
 	HeartbeatTimeout   time.Duration
 	CommitSyncInterval time.Duration

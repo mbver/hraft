@@ -5,55 +5,67 @@ import (
 	"sync"
 )
 
-type peerRole int8
+type PeerRole int8
 
 const (
-	roleStaging peerRole = iota
-	roleNonVoter
-	roleVoter
-	roleAbsent
+	RoleStaging PeerRole = iota
+	RoleNonVoter
+	RoleVoter
+	RoleAbsent
 )
 
-func (r peerRole) String() string {
+func (r PeerRole) String() string {
 	switch r {
-	case roleStaging:
+	case RoleStaging:
 		return "staging"
-	case roleVoter:
+	case RoleVoter:
 		return "voter"
-	case roleNonVoter:
+	case RoleNonVoter:
 		return "non-voter"
-	case roleAbsent:
+	case RoleAbsent:
 		return "absent"
 	}
 	return "unknown-role"
 }
 
-type peer struct {
-	id   string
-	role peerRole
+type Peer struct {
+	ID   string
+	Role PeerRole
 }
 
-func (p *peer) getId() string {
-	return p.id
+func (p *Peer) getId() string {
+	return p.ID
 }
 
-func (p *peer) isVoter() bool {
-	return p.role == roleVoter
+func (p *Peer) isVoter() bool {
+	return p.Role == RoleVoter
 }
 
-func (p *peer) isStaging() bool {
-	return p.role == roleStaging
+func (p *Peer) isStaging() bool {
+	return p.Role == RoleStaging
 }
 
-func validatePeers(peers []*peer) error {
+func validatePeers(peers []*Peer) error {
 	numStaging := 0
+	numVoters := 0
+	exist := map[string]bool{}
 	for _, p := range peers {
-		if p.id == "" {
+		if p.ID == "" {
 			return fmt.Errorf("empty peer id")
+		}
+		if exist[p.ID] {
+			return fmt.Errorf("duplicated peer %s", p.ID)
+		}
+		exist[p.ID] = true
+		if p.isVoter() {
+			numVoters++
 		}
 		if p.isStaging() {
 			numStaging++
 		}
+	}
+	if numVoters < 1 {
+		return fmt.Errorf("require at least 1 voter")
 	}
 	if numStaging > 1 {
 		return fmt.Errorf("number of staging peer exceeds 1: %d", numStaging)
@@ -64,21 +76,13 @@ func validatePeers(peers []*peer) error {
 type membership struct {
 	l              sync.Mutex
 	localID        string
-	latestPeers    []*peer
+	latestPeers    []*Peer
 	lastestIdx     uint64
-	committedPeers []*peer
+	committedPeers []*Peer
 	committedIdx   uint64
 }
 
-func newMembership(localID string, noElect bool, peerIDs []string) *membership {
-	peers := make([]*peer, len(peerIDs))
-	for i, id := range peerIDs {
-		p := &peer{id, roleVoter}
-		if noElect {
-			p.role = roleNonVoter
-		}
-		peers[i] = p
-	}
+func newMembership(localID string, noElect bool, peers []*Peer) *membership {
 	return &membership{
 		localID:        localID,
 		latestPeers:    peers,
@@ -96,11 +100,17 @@ func (m *membership) isLocalVoter() bool {
 	m.l.Lock()
 	defer m.l.Unlock()
 	for _, p := range m.latestPeers {
-		if p.id == m.localID {
-			return p.role == roleVoter
+		if p.ID == m.localID {
+			return p.Role == RoleVoter
 		}
 	}
 	return false
+}
+
+func (m *membership) activated() bool {
+	m.l.Lock()
+	defer m.l.Unlock()
+	return m.lastestIdx > 0
 }
 
 func (m *membership) isStable() bool {
@@ -114,10 +124,10 @@ func (m *membership) getVoters() []string {
 	defer m.l.Unlock()
 	voters := []string{}
 	for _, p := range m.latestPeers {
-		if p.role != roleVoter {
+		if p.Role != RoleVoter {
 			continue
 		}
-		voters = append(voters, p.id)
+		voters = append(voters, p.ID)
 	}
 	return voters
 }
@@ -147,22 +157,22 @@ func (m *membership) getStaging() string {
 	m.l.Lock()
 	defer m.l.Unlock()
 	for _, p := range m.latestPeers {
-		if p.role == roleStaging {
-			return p.id
+		if p.Role == RoleStaging {
+			return p.ID
 		}
 	}
 	return ""
 }
 
-func (m *membership) getPeer(id string) peerRole {
+func (m *membership) getPeer(id string) PeerRole {
 	m.l.Lock()
 	defer m.l.Unlock()
 	for _, p := range m.latestPeers {
-		if p.id == id {
-			return p.role
+		if p.ID == id {
+			return p.Role
 		}
 	}
-	return roleAbsent
+	return RoleAbsent
 }
 
 func (m *membership) peers() []string {
@@ -170,28 +180,28 @@ func (m *membership) peers() []string {
 	defer m.l.Unlock()
 	mems := make([]string, 0, len(m.latestPeers)-1)
 	for _, p := range m.latestPeers {
-		mems = append(mems, p.id)
+		mems = append(mems, p.ID)
 	}
 	return mems
 }
 
-func (m *membership) getLatest() []*peer {
+func (m *membership) getLatest() []*Peer {
 	m.l.Lock()
 	defer m.l.Unlock()
 	return copyPeers(m.latestPeers)
 }
 
-func (m *membership) setLatest(in []*peer, idx uint64) {
+func (m *membership) setLatest(in []*Peer, idx uint64) {
 	m.l.Lock()
 	defer m.l.Unlock()
 	m.latestPeers = copyPeers(in)
 	m.lastestIdx = idx
 }
 
-func copyPeers(in []*peer) []*peer {
-	out := make([]*peer, len(in))
+func copyPeers(in []*Peer) []*Peer {
+	out := make([]*Peer, len(in))
 	for i, p := range in {
-		out[i] = &peer{p.id, p.role}
+		out[i] = &Peer{p.ID, p.Role}
 	}
 	return out
 }
@@ -236,48 +246,48 @@ func newMembershipChange(addr string, changeType membershipChageType) *membershi
 	}
 }
 
-func (m *membership) newPeersFromChange(change *membershipChange) ([]*peer, error) {
+func (m *membership) newPeersFromChange(change *membershipChange) ([]*Peer, error) {
 	latest := m.getLatest()
 	switch change.changeType {
 	case addStaging:
 		for _, p := range latest {
-			if p.id == change.addr {
-				return nil, fmt.Errorf("peer exists with role %s", p.role)
+			if p.ID == change.addr {
+				return nil, fmt.Errorf("peer exists with role %s", p.Role)
 			}
 		}
-		latest = append(latest, &peer{change.addr, roleStaging})
+		latest = append(latest, &Peer{change.addr, RoleStaging})
 		if err := validatePeers(latest); err != nil {
 			return nil, err
 		}
 		return latest, nil
 	case addNonVoter:
 		for _, p := range latest {
-			if p.id == change.addr {
-				return nil, fmt.Errorf("peer exists with role %s", p.role)
+			if p.ID == change.addr {
+				return nil, fmt.Errorf("peer exists with role %s", p.Role)
 			}
 		}
-		latest = append(latest, &peer{change.addr, roleNonVoter})
+		latest = append(latest, &Peer{change.addr, RoleNonVoter})
 		if err := validatePeers(latest); err != nil {
 			return nil, err
 		}
 		return latest, nil
 	case promotePeer:
 		for _, p := range latest {
-			if p.id == change.addr && p.role == roleStaging {
-				p.role = roleVoter
+			if p.ID == change.addr && p.Role == RoleStaging {
+				p.Role = RoleVoter
 				return latest, nil
 			}
 		}
 	case demotePeer:
 		for _, p := range latest {
-			if p.id == change.addr && p.role == roleVoter {
-				p.role = roleVoter
+			if p.ID == change.addr && p.Role == RoleVoter {
+				p.Role = RoleVoter
 				return latest, nil
 			}
 		}
 	case removePeer:
 		for i, p := range latest {
-			if p.id == change.addr {
+			if p.ID == change.addr {
 				n := len(latest)
 				latest[i], latest[n-1] = latest[n-1], latest[i]
 				latest = latest[:n-1]
