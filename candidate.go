@@ -144,7 +144,7 @@ func (c *Candidate) runElection(voteCh chan *voteResult) {
 			// check vote and increase quorum
 		case <-c.cancel.Ch():
 			return
-		case <-electionTimeoutCh: // quit election, transition back to follower
+		case <-electionTimeoutCh: // quit election, transition back to follower. OR START NEW ELECTION?
 			waitCh := c.raft.dispatchTransition(followerStateType, c.getTerm())
 			<-waitCh
 			return

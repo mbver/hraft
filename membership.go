@@ -63,20 +63,24 @@ func validatePeers(peers []*peer) error {
 
 type membership struct {
 	l              sync.Mutex
-	local          *peer
+	localID        string
 	latestPeers    []*peer
 	lastestIdx     uint64
 	committedPeers []*peer
 	committedIdx   uint64
 }
 
-func newMembership(localID string, peerIDs []string) *membership {
+func newMembership(localID string, noElect bool, peerIDs []string) *membership {
 	peers := make([]*peer, len(peerIDs))
 	for i, id := range peerIDs {
-		peers[i] = &peer{id, roleVoter}
+		p := &peer{id, roleVoter}
+		if noElect {
+			p.role = roleNonVoter
+		}
+		peers[i] = p
 	}
 	return &membership{
-		local:          &peer{localID, roleVoter},
+		localID:        localID,
 		latestPeers:    peers,
 		lastestIdx:     0,
 		committedPeers: peers,
@@ -84,10 +88,19 @@ func newMembership(localID string, peerIDs []string) *membership {
 	}
 }
 
-func (m *membership) getLocal() *peer {
+func (m *membership) getLocalID() string {
+	return m.localID
+}
+
+func (m *membership) isLocalVoter() bool {
 	m.l.Lock()
 	defer m.l.Unlock()
-	return m.local
+	for _, p := range m.latestPeers {
+		if p.id == m.localID {
+			return p.role == roleVoter
+		}
+	}
+	return false
 }
 
 func (m *membership) isStable() bool {

@@ -102,7 +102,7 @@ func (r *Raft) receiveMsgs() {
 		case change := <-r.membershipChangeCh:
 			r.getState().HandleMembershipChange(change)
 		case <-r.heartbeatTimeout.getCh():
-			if !r.membership.getLocal().isVoter() { // non-voter node will not transition to candidate
+			if !r.membership.isLocalVoter() { // non-voter node will not transition to candidate
 				r.heartbeatTimeout.reset()
 				continue
 			}

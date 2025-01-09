@@ -156,6 +156,16 @@ func (c *cluster) close() {
 	c.wg.Wait()
 }
 
+func (c *cluster) getNodesByState(state RaftStateType) []*Raft {
+	res := []*Raft{}
+	for _, r := range c.rafts {
+		if r.getStateType() == state {
+			res = append(res, r)
+		}
+	}
+	return res
+}
+
 type discardCommandsApplier struct{}
 
 func (a *discardCommandsApplier) ApplyCommands(commits []*Commit) {
@@ -170,7 +180,7 @@ func (m *discardMembershipApplier) ApplyMembership(c *Commit) {
 	trySendErr(c.ErrCh, nil)
 }
 
-func createTestCluster(n int) (*cluster, func(), error) {
+func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addresses := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -180,7 +190,11 @@ func createTestCluster(n int) (*cluster, func(), error) {
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
 	for _, addr := range addresses {
 		b := &RaftBuilder{}
-		b.WithConfig(defaultTestConfig(addr, addresses))
+
+		conf := defaultTestConfig(addr, addresses)
+		conf.NoElect = noElect
+		b.WithConfig(conf)
+
 		b.WithTransportConfig(testTransportConfigFromAddr(addr))
 
 		b.WithLogStore(newInMemLogStore())

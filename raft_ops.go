@@ -288,7 +288,7 @@ func (r *Raft) persistVote(term uint64, candidate []byte) error {
 }
 
 func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
-	if !r.membership.getLocal().isVoter() { // non-voter node don't involve request vote
+	if !r.membership.isLocalVoter() { // non-voter node don't involve request vote
 		return
 	}
 	// setup a response
@@ -378,11 +378,7 @@ func (r *Raft) Peers() []string {
 }
 
 func (r *Raft) ID() string {
-	return r.membership.getLocal().getId()
-}
-
-func (r *Raft) Local() *peer {
-	return r.membership.getLocal()
+	return r.membership.getLocalID()
 }
 
 func (r *Raft) StagingPeer() string {
@@ -442,7 +438,7 @@ func (r *Raft) Apply(cmd []byte, timeout time.Duration) error {
 	return drainErr(a.errCh, timeoutCh, r.shutdownCh())
 }
 
-func (r *Raft) AddPeer(addr string, timeout time.Duration) error {
+func (r *Raft) AddVoter(addr string, timeout time.Duration) error {
 	m := newMembershipChange(addr, addStaging)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {

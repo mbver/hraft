@@ -44,7 +44,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		config:             b.config,
 		logger:             b.logger,
 		appstate:           b.appState,
-		membership:         newMembership(b.config.LocalID, b.config.InitalPeers),
+		membership:         newMembership(b.config.LocalID, b.config.NoElect, b.config.InitalPeers),
 		instate:            &internalState{},
 		state:              followerStateType,
 		logs:               b.logStore,
