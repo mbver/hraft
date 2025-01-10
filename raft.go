@@ -103,7 +103,7 @@ func (r *Raft) receiveMsgs() {
 		case change := <-r.membershipChangeCh:
 			r.getState().HandleMembershipChange(change)
 		case <-r.heartbeatTimeout.getCh():
-			if !r.membership.activated() || !r.membership.isLocalVoter() { // non-voter node will not transition to candidate
+			if !r.membership.isActive() || !r.membership.isLocalVoter() {
 				r.heartbeatTimeout.reset()
 				warnOnce.Do(func() { r.logger.Warn("membership is unactivated or local node is not voter, skipping election") })
 				continue

@@ -19,8 +19,6 @@ type peerReplication struct {
 	raft *Raft
 	// logAddedCh is notified every time new entries are appended to the log.
 	logAddedCh chan struct{}
-	// notify leader that the peers'log is synced
-	logSyncedCh chan struct{}
 	// trigger a heartbeat immediately
 	pulseCh chan struct{}
 	// leader's stepdown control
@@ -68,13 +66,12 @@ func (r *peerReplication) replicate() {
 	uptoIdx, _ := r.raft.getLastLog()
 	<-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10)
 	nextIdx := r.getNextIdx()
-	for nextIdx < uptoIdx && !r.stepdown.IsClosed() {
+	for nextIdx <= uptoIdx && !r.stepdown.IsClosed() {
 		select {
 		case <-time.After(r.backoff.getValue()):
 		case <-r.stepdown.Ch():
 			return
 		}
-
 		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
 		// skip snapshot stuffs for now
 		if err != nil { // reporting error and stop node ??
@@ -98,7 +95,7 @@ func (r *peerReplication) replicate() {
 			return
 		}
 		if res.Term > r.currentTerm {
-			r.stepdown.Close() // stop all replication early
+			r.stepdown.Close() // stop all replication
 			waitCh := r.raft.dispatchTransition(followerStateType, res.Term)
 			<-waitCh
 			return
@@ -107,8 +104,8 @@ func (r *peerReplication) replicate() {
 			nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
 			r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
 			r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
-			// if replicate failed not because of log-consistency check,
-			// delay retry futher
+			// if failure is NOT because of log
+			// inconsistencies, further delay backoff.
 			if !res.PrevLogCheckFailed {
 				r.backoff.next()
 			}
@@ -188,8 +185,10 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		updateMatchIdx: l.commit.updateMatchIdx,
 		logAddedCh:     make(chan struct{}, 1),
 		currentTerm:    l.raft.getTerm(),
-		nextIdx:        lastIdx + 1,
+		nextIdx:        lastIdx,
 		stepdown:       l.stepdown,
+		backoff:        newBackoff(10*time.Millisecond, 41960*time.Millisecond),
+		staging:        l.staging,
 	}
 	go r.run()
 	tryNotify(r.logAddedCh)

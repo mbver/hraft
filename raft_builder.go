@@ -1,6 +1,10 @@
 package hraft
 
-import hclog "github.com/hashicorp/go-hclog"
+import (
+	"fmt"
+
+	hclog "github.com/hashicorp/go-hclog"
+)
 
 type RaftBuilder struct {
 	config          *Config
@@ -36,6 +40,9 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 }
 
 func (b *RaftBuilder) Build() (*Raft, error) {
+	if !validateConfig(b.config) {
+		return nil, fmt.Errorf("invalid config")
+	}
 	transport, err := newNetTransport(b.transportConfig, b.logger)
 	if err != nil {
 		return nil, err
@@ -44,7 +51,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		config:             b.config,
 		logger:             b.logger,
 		appstate:           b.appState,
-		membership:         newMembership(b.config.LocalID, b.config.NoElect, b.config.InitalPeers),
+		membership:         newMembership(b.config.LocalID),
 		instate:            &internalState{},
 		state:              followerStateType,
 		logs:               b.logStore,
@@ -53,7 +60,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		heartbeatCh:        transport.HeartbeatCh(),
 		rpchCh:             transport.RpcCh(),
 		applyCh:            make(chan *Apply),
-		commitNotifyCh:     make(chan struct{}), // buffer? how to like with leader commit control?
+		commitNotifyCh:     make(chan struct{}, 1),
 		membershipChangeCh: make(chan *membershipChange),
 		transitionCh:       make(chan *Transition), // buffer?
 		heartbeatTimeout:   newHeartbeatTimeout(b.config.HeartbeatTimeout),

@@ -101,7 +101,7 @@ func (r *Raft) appendEntries(entries []*Log) error {
 		}
 		// check for log inconsitencies and handle it
 		if entry.Term != existed.Term {
-			// clear log suffix
+			// clear log suffix, last log updates will be done later
 			r.logger.Warn("clearing logs suffix",
 				"from", entry.Idx,
 				"to", lastLogIdx)
@@ -109,19 +109,9 @@ func (r *Raft) appendEntries(entries []*Log) error {
 				r.logger.Error("failed to clear log suffix", "error", err)
 				return err
 			}
-			// update last-log
-			lastLogIdx, err := r.logs.LastIdx()
-			if err != nil {
-				r.logger.Warn("failed to get last-log-index from store", "error", err)
-				return err
+			if _, latestIdx := r.membership.getLatest(); latestIdx <= entry.Idx {
+				r.membership.rollbackToCommitted()
 			}
-			if err := r.logs.GetLog(lastLogIdx, existed); err != nil {
-				r.logger.Warn("failed to get log entry",
-					"index", lastLogIdx,
-					"error", err)
-				return err
-			}
-			r.instate.setLastLog(lastLogIdx, existed.Term)
 			// get new-entries
 			newEntries = entries[i:]
 			break
@@ -134,6 +124,17 @@ func (r *Raft) appendEntries(entries []*Log) error {
 		r.logger.Error("failed to append to logs", "error", err)
 		return err
 	}
+	for _, log := range newEntries {
+		if log.Type == LogMembership {
+			// this might look redundant but absolutely necessary
+			r.membership.setCommitted(r.membership.getLatest())
+			var peers []*Peer
+			if err := decode(log.Data, &peers); err != nil {
+				return err
+			}
+			r.membership.setLatest(peers, log.Idx)
+		}
+	}
 	last := newEntries[len(newEntries)-1]
 	r.instate.setLastLog(last.Idx, last.Term)
 	return nil
@@ -145,8 +146,10 @@ func (r *Raft) updateLeaderCommit(idx uint64) {
 	}
 	idx = min(idx, r.instate.getLastIdx())
 	r.instate.setCommitIdx(idx)
+	if _, latestIdx := r.membership.getLatest(); latestIdx <= idx {
+		r.membership.setCommitted(r.membership.getLatest())
+	}
 	r.handleNewLeaderCommit(idx)
-
 }
 
 type Commit struct {
@@ -157,12 +160,14 @@ type Commit struct {
 func (r *Raft) handleNewLeaderCommit(idx uint64) {
 	lastApplied := r.instate.getLastApplied()
 	if idx <= lastApplied {
-		r.logger.Warn("skipping application of old log", "index", idx)
 		return
 	}
 	batchSize := r.config.MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
 	for i := lastApplied; i <= idx; i++ {
+		if i == 0 { // ========== this is ugly
+			continue
+		}
 		l := &Log{}
 		if err := r.logs.GetLog(i, l); err != nil {
 			r.logger.Error("failed to get log", "index", i, "error", err)
@@ -405,7 +410,7 @@ func sendToRaft[T *Apply | *membershipChange](ch chan T, msg T, timeoutCh <-chan
 	case ch <- msg:
 		return nil
 	case <-timeoutCh:
-		return ErrTimeout
+		return fmt.Errorf("timeout sending to raft")
 	case <-shutdownCh:
 		return ErrRaftShutdown
 	}
@@ -416,7 +421,7 @@ func drainErr(errCh chan error, timeoutCh <-chan time.Time, shutdownCh chan stru
 	case err := <-errCh:
 		return err
 	case <-timeoutCh:
-		return ErrTimeout
+		return fmt.Errorf("timeout draining error")
 	case <-shutdownCh:
 		return ErrRaftShutdown
 	}
@@ -445,4 +450,56 @@ func (r *Raft) AddVoter(addr string, timeout time.Duration) error {
 		return err
 	}
 	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
+}
+
+// Bootstrap is called only once on the first node in a cluster.
+// Subsequent calls will return an error that can be safely ignored.
+// Later nodes are not bootstraped and added via AddVoter.
+func (r *Raft) Bootstrap(timeout time.Duration) error { // TODO: timeout is in config?
+	hasState, err := r.hasExistingState()
+	if err != nil {
+		return err
+	}
+	if hasState {
+		return fmt.Errorf("has existing state, can't bootstrap")
+	}
+	peers := []*Peer{{r.ID(), RoleVoter}}
+	r.membership.setLatest(peers, 0)
+	if !r.VerifyLeader(timeout) {
+		return fmt.Errorf("failed transition to leader")
+	}
+	m := newMembershipChange("", bootstrap)
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
+}
+
+func (r *Raft) hasExistingState() (bool, error) {
+	_, err := r.kvs.GetUint64(keyCurrentTerm)
+	if err != ErrKeyNotFound {
+		if err == nil {
+			return true, nil
+		}
+		return false, err
+	}
+	lastIdx, err := r.logs.LastIdx()
+	if err != nil {
+		return false, err
+	}
+	if lastIdx > 0 {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (r *Raft) VerifyLeader(timeout time.Duration) bool {
+	timeoutCh := getTimeoutCh(timeout)
+	select {
+	case r.getLeaderState().verifyReqCh <- struct{}{}:
+		return true
+	case <-timeoutCh:
+		return false
+	}
 }

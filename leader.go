@@ -16,6 +16,7 @@ type Leader struct {
 	inflight       *list.List
 	replicationMap map[string]*peerReplication
 	staging        *staging
+	verifyReqCh    chan struct{}
 	stepdown       *ResetableProtectedChan
 }
 
@@ -24,6 +25,7 @@ func NewLeader(r *Raft) *Leader {
 		raft:           r,
 		replicationMap: map[string]*peerReplication{},
 		stepdown:       newResetableProtectedChan(),
+		verifyReqCh:    make(chan struct{}),
 	}
 	l.stepdown.Close()
 	return l
@@ -51,8 +53,22 @@ func (l *Leader) StepUp() {
 	}
 	commitIdx := l.raft.instate.getCommitIdx()
 	l.commit = newCommitControl(commitIdx, l.raft.commitNotifyCh)
+	l.inflight = list.New()
 	l.startReplication()
 	go l.receiveStaging()
+	go l.receiveVerifyRequests()
+}
+
+func (l *Leader) receiveVerifyRequests() {
+	for {
+		select {
+		case <-l.verifyReqCh:
+		case <-l.stepdown.Ch():
+			return
+		case <-l.raft.shutdownCh():
+			return
+		}
+	}
 }
 
 func (l *Leader) Stepdown() {
@@ -63,7 +79,9 @@ func (l *Leader) Stepdown() {
 	}
 	l.active = false
 	l.stepdown.Close()
+	// TODO: wait until all goros stop
 	l.replicationMap = map[string]*peerReplication{}
+	l.inflight = nil
 	// TODO: transition to follower
 }
 
@@ -85,7 +103,7 @@ func (l *Leader) HandleTransition(trans *Transition) {
 // heartbeatTimeout is blocked in leader state
 func (l *Leader) HandleHeartbeatTimeout() {}
 
-func (l *Leader) HandleNewCommit() {
+func (l *Leader) HandleCommitNotify() {
 	commitIdx := l.commit.getCommitIdx()
 	l.raft.instate.setCommitIdx(commitIdx)
 
@@ -95,7 +113,7 @@ func (l *Leader) HandleNewCommit() {
 		return
 	}
 	firstIdx := first.Value.(*Apply).log.Idx
-	// handle logs before stepping up
+	// handle logs from previous leader
 	l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
 
 	batchSize := l.raft.config.MaxAppendEntries
@@ -117,11 +135,12 @@ func (l *Leader) HandleNewCommit() {
 			batch = make([]*Commit, 0, batchSize)
 		}
 	}
-
 	if len(batch) > 0 {
 		l.raft.applyCommits(batch)
 	}
-
+	if _, latestIdx := l.raft.membership.getLatest(); latestIdx <= commitIdx {
+		l.raft.membership.setCommitted(l.raft.membership.getLatest())
+	}
 	l.raft.instate.setLastApplied(commitIdx)
 }
 
@@ -129,8 +148,6 @@ func (l *Leader) HandleApply(a *Apply) {
 	// get maxAppendentries items
 	// dispatch applies
 }
-
-func (l *Leader) HandleCommitNotify() {}
 
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
@@ -149,7 +166,6 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 		logs[idx] = a.log
 		l.inflight.PushBack(a)
 	}
-
 	// Write the log entry locally
 	if err := l.raft.logs.StoreLogs(logs); err != nil {
 		l.raft.logger.Error("failed to commit logs", "error", err)
@@ -191,6 +207,9 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	log := &Log{
 		Type: LogMembership,
 		Data: encoded,
+	}
+	if change.changeType == bootstrap {
+		l.commit.updateVoters(l.raft.membership.getVoters())
 	}
 	l.dispatchApplies([]*Apply{{
 		log:   log,

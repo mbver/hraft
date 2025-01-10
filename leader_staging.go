@@ -1,6 +1,8 @@
 package hraft
 
-import "sync"
+import (
+	"sync"
+)
 
 // all channel buffer is 1
 // allow adding only 1 peer a time

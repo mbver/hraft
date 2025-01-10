@@ -61,7 +61,6 @@ func (c *commitControl) updateCommitIdx() {
 	})
 
 	commitIdx := matched[(len(matched)-1)/2]
-
 	if commitIdx > c.commitIdx {
 		c.commitIdx = commitIdx
 		tryNotify(c.commitNotifyCh)

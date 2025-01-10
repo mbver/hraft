@@ -78,16 +78,16 @@ type membership struct {
 	localID        string
 	latestPeers    []*Peer
 	lastestIdx     uint64
-	committedPeers []*Peer
+	committedPeers []*Peer // ======= is this necessary?
 	committedIdx   uint64
 }
 
-func newMembership(localID string, noElect bool, peers []*Peer) *membership {
+func newMembership(localID string) *membership {
 	return &membership{
 		localID:        localID,
-		latestPeers:    peers,
+		latestPeers:    nil,
 		lastestIdx:     0,
-		committedPeers: peers,
+		committedPeers: nil,
 		committedIdx:   0,
 	}
 }
@@ -107,10 +107,10 @@ func (m *membership) isLocalVoter() bool {
 	return false
 }
 
-func (m *membership) activated() bool {
+func (m *membership) isActive() bool {
 	m.l.Lock()
 	defer m.l.Unlock()
-	return m.lastestIdx > 0
+	return len(m.latestPeers) > 0
 }
 
 func (m *membership) isStable() bool {
@@ -185,10 +185,17 @@ func (m *membership) peers() []string {
 	return mems
 }
 
-func (m *membership) getLatest() []*Peer {
+func (m *membership) rollbackToCommitted() {
 	m.l.Lock()
 	defer m.l.Unlock()
-	return copyPeers(m.latestPeers)
+	m.lastestIdx = m.committedIdx
+	m.latestPeers = copyPeers(m.committedPeers)
+}
+
+func (m *membership) getLatest() ([]*Peer, uint64) {
+	m.l.Lock()
+	defer m.l.Unlock()
+	return copyPeers(m.latestPeers), m.lastestIdx
 }
 
 func (m *membership) setLatest(in []*Peer, idx uint64) {
@@ -196,6 +203,13 @@ func (m *membership) setLatest(in []*Peer, idx uint64) {
 	defer m.l.Unlock()
 	m.latestPeers = copyPeers(in)
 	m.lastestIdx = idx
+}
+
+func (m *membership) setCommitted(in []*Peer, idx uint64) {
+	m.l.Lock()
+	defer m.l.Unlock()
+	m.committedPeers = copyPeers(in)
+	m.committedIdx = idx
 }
 
 func copyPeers(in []*Peer) []*Peer {
@@ -214,6 +228,7 @@ const (
 	promotePeer
 	demotePeer
 	removePeer
+	bootstrap
 )
 
 func (t membershipChageType) String() string {
@@ -228,6 +243,8 @@ func (t membershipChageType) String() string {
 		return "demote_peer"
 	case removePeer:
 		return "remove_peer"
+	case bootstrap:
+		return "bootstrap"
 	}
 	return "unknown membershipt change"
 }
@@ -247,7 +264,7 @@ func newMembershipChange(addr string, changeType membershipChageType) *membershi
 }
 
 func (m *membership) newPeersFromChange(change *membershipChange) ([]*Peer, error) {
-	latest := m.getLatest()
+	latest, _ := m.getLatest()
 	switch change.changeType {
 	case addStaging:
 		for _, p := range latest {
@@ -294,6 +311,8 @@ func (m *membership) newPeersFromChange(change *membershipChange) ([]*Peer, erro
 				return latest, nil
 			}
 		}
+	case bootstrap:
+		return []*Peer{{m.localID, RoleVoter}}, nil
 	}
 	return nil, fmt.Errorf("unable to find peer %s for %s change", change.addr, change.changeType)
 }

@@ -125,10 +125,9 @@ func tryGetNotify(ch chan struct{}) bool {
 	}
 }
 
-func defaultTestConfig(addr string, peers []*Peer) *Config {
+func defaultTestConfig(addr string) *Config {
 	return &Config{
 		LocalID:            addr,
-		InitalPeers:        peers,
 		ElectionTimeout:    100 * time.Millisecond,
 		HeartbeatTimeout:   100 * time.Millisecond,
 		CommitSyncInterval: 20 * time.Millisecond,
@@ -188,10 +187,11 @@ func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
 	}
 	cluster := &cluster{}
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
-	for _, addr := range addresses {
+	var first *Raft
+	for i, addr := range addresses {
 		b := &RaftBuilder{}
 
-		conf := defaultTestConfig(addr, addresses)
+		conf := defaultTestConfig(addr)
 		conf.NoElect = noElect
 		b.WithConfig(conf)
 
@@ -209,6 +209,36 @@ func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
 			return nil, cleanup, err
 		}
 		cluster.add(raft)
+		if i == 0 {
+			first = raft
+			if err := first.Bootstrap(1000 * time.Millisecond); err != nil {
+				return nil, cleanup, err
+			}
+			continue
+		}
+		if err := first.AddVoter(addr, 200*time.Millisecond); err != nil {
+			return nil, cleanup, err
+		}
+		success, msg := retry(5, func() (bool, string) {
+			time.Sleep(100 * time.Millisecond)
+			if raft.membership.isLocalVoter() {
+				return true, ""
+			}
+			return false, "unable to become voter"
+		})
+		if !success {
+			return nil, cleanup, fmt.Errorf("%s", msg)
+		}
 	}
 	return cluster, cleanup, nil
+}
+
+func retry(n int, f func() (bool, string)) (success bool, msg string) {
+	for i := 0; i < n; i++ {
+		success, msg = f()
+		if success {
+			return
+		}
+	}
+	return
 }
