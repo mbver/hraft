@@ -29,9 +29,9 @@ type peerReplication struct {
 	// stopCh fires when the follower is removed from cluster
 	stopCh chan struct{}
 	// waiting time to retry when replication fails
-	backoff *backoff
-	staging *staging
-	onStage bool
+	backoff   *backoff
+	logSyncCh chan struct{}
+	onStage   bool
 }
 
 func (r *peerReplication) getNextIdx() uint64 {
@@ -131,7 +131,7 @@ func (r *peerReplication) replicate() {
 		nextIdx = r.getNextIdx()
 	}
 	if r.onStage {
-		tryNotify(r.staging.logSyncCh)
+		tryNotify(r.logSyncCh)
 		r.onStage = false
 	}
 }
@@ -191,9 +191,9 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		nextIdx:            lastIdx,
 		stepdown:           l.stepdown,
 		backoff:            newBackoff(10*time.Millisecond, 41960*time.Millisecond),
-		staging:            l.staging,
+		logSyncCh:          l.staging.logSyncCh,
 	}
-	if r.staging.getId() == r.addr {
+	if l.staging.getId() == r.addr {
 		r.onStage = true
 	}
 	go r.run()
