@@ -9,25 +9,18 @@ import (
 // allow adding only 1 peer a time
 type staging struct {
 	l          sync.Mutex
-	active     bool
 	id         string
-	stageCh    chan string
-	logSyncCh  chan string
-	promotedCh chan string
+	stageCh    chan struct{}
+	logSyncCh  chan struct{}
+	promotedCh chan struct{}
 }
 
 func newStaging() *staging {
 	return &staging{
-		stageCh:    make(chan string, 1),
-		logSyncCh:  make(chan string, 1),
-		promotedCh: make(chan string, 1),
+		stageCh:    make(chan struct{}, 1),
+		logSyncCh:  make(chan struct{}, 1),
+		promotedCh: make(chan struct{}, 1),
 	}
-}
-
-func (s *staging) isActive() bool {
-	s.l.Lock()
-	defer s.l.Unlock()
-	return s.active
 }
 
 func (s *staging) getId() string {
@@ -37,7 +30,10 @@ func (s *staging) getId() string {
 }
 
 func (s *staging) stage(id string) {
-	s.stageCh <- id // TODO: have a timeout?
+	s.l.Lock()
+	s.id = id
+	s.l.Unlock()
+	s.stageCh <- struct{}{} // TODO: have a timeout?
 }
 
 // the nested loop to ensure
@@ -45,13 +41,8 @@ func (s *staging) stage(id string) {
 // goro is blocked until peer is promoted
 func (l *Leader) receiveStaging() {
 	for {
-		var id string
 		select {
-		case id = <-l.staging.stageCh:
-			l.staging.l.Lock()
-			l.staging.id = id
-			l.staging.active = true
-			l.staging.l.Unlock()
+		case <-l.staging.stageCh:
 			l.receiveLogSynced()
 		case <-l.stepdown.Ch():
 			return
@@ -64,18 +55,16 @@ func (l *Leader) receiveStaging() {
 func (l *Leader) receiveLogSynced() {
 	select {
 	case id := <-l.staging.logSyncCh:
-		l.staging.l.Lock()
-		l.staging.active = false
-		l.staging.l.Unlock()
 		for {
-			m := newMembershipChange(id, promotePeer)
+			m := newMembershipChange(l.staging.getId(), promotePeer)
 			l.raft.membershipChangeCh <- m
 			err := <-m.errCh
-			if err != nil { // keep promote peer until successful or stopped
+			if err == ErrMembershipUnstable { // keep promote peer until successful or stopped
 				l.raft.logger.Warn("promote peer from staging: membership is unstable, retry", "peer", id)
 				time.Sleep(200 * time.Millisecond) // TODO: ADD TO CONFIG?
 				continue
 			}
+			// ignore other err??
 			return
 		}
 	case <-l.stepdown.Ch():

@@ -217,10 +217,10 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	}})
 	l.raft.membership.setLatest(peers, log.Idx)
 	l.commit.updateVoters(l.raft.Voters())
-	l.l.Lock()
-	l.startReplication()
-	l.l.Unlock()
 	if change.changeType == addStaging {
 		l.staging.stage(change.addr)
 	}
+	l.l.Lock()
+	l.startReplication()
+	l.l.Unlock()
 }

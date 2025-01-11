@@ -31,6 +31,7 @@ type peerReplication struct {
 	// waiting time to retry when replication fails
 	backoff *backoff
 	staging *staging
+	onStage bool
 }
 
 func (r *peerReplication) getNextIdx() uint64 {
@@ -129,9 +130,9 @@ func (r *peerReplication) replicate() {
 		}
 		nextIdx = r.getNextIdx()
 	}
-	if !r.stepdown.IsClosed() && r.staging != nil &&
-		r.staging.isActive() && r.staging.getId() == r.addr {
-		trySend(r.staging.logSyncCh, r.addr)
+	if r.onStage {
+		tryNotify(r.staging.logSyncCh)
+		r.onStage = false
 	}
 }
 
@@ -191,6 +192,9 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		stepdown:           l.stepdown,
 		backoff:            newBackoff(10*time.Millisecond, 41960*time.Millisecond),
 		staging:            l.staging,
+	}
+	if r.staging.getId() == r.addr {
+		r.onStage = true
 	}
 	go r.run()
 	tryNotify(r.logAddedCh)
