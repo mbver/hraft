@@ -17,6 +17,9 @@ type peerReplication struct {
 	updateMatchIdx func(string, uint64)
 	// reference to the leader's Raft
 	raft *Raft
+	// extracted from raft config for convenient use
+	commitSyncInterval time.Duration
+	heartbeatTimeout   time.Duration
 	// logAddedCh is notified every time new entries are appended to the log.
 	logAddedCh chan struct{}
 	// trigger a heartbeat immediately
@@ -38,6 +41,8 @@ func (r *peerReplication) setNextIdx(idx uint64) {
 	atomic.StoreUint64(&r.nextIdx, idx)
 }
 
+// wait for signals fires from timeCh or sigCh until the replication is stopped.
+// if replication is stopped, return false to signify waiting goro to stop too.
 func (r *peerReplication) waitForSignals(timeCh <-chan time.Time, sigCh chan struct{}) (gotSignal bool) {
 	select {
 	case <-timeCh:
@@ -59,9 +64,7 @@ func (r *peerReplication) run() {
 	// Start an async heartbeating routing
 	go r.heartbeat()
 	for {
-		syncCommitCh := jitterTimeoutCh(r.raft.config.CommitSyncInterval)
-		gotSignal := r.waitForSignals(syncCommitCh, r.logAddedCh)
-		if !gotSignal {
+		if !r.waitForSignals(jitterTimeoutCh(r.commitSyncInterval), r.logAddedCh) {
 			if tryGetSignal(r.stopCh) {
 				r.replicate()
 			}
@@ -73,14 +76,10 @@ func (r *peerReplication) run() {
 
 func (r *peerReplication) replicate() {
 	uptoIdx, _ := r.raft.getLastLog()
-	<-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10)
+	<-jitterTimeoutCh(r.heartbeatTimeout / 10)
 	nextIdx := r.getNextIdx()
 	for nextIdx <= uptoIdx && !r.stepdown.IsClosed() {
-		select {
-		case <-time.After(r.backoff.getValue()):
-		case <-r.stepdown.Ch():
-			return
-		case <-r.raft.shutdownCh():
+		if !r.waitForSignals(time.After(r.backoff.getValue()), nil) {
 			return
 		}
 		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
@@ -146,21 +145,13 @@ func (r *peerReplication) heartbeat() {
 	}
 	var resp AppendEntriesResponse
 	for {
-		select {
-		case <-time.After(backoff.getValue()):
-		case <-r.stepdown.Ch():
-			return
-		case <-r.raft.shutdownCh():
+		if !r.waitForSignals(time.After(backoff.getValue()), nil) {
 			return
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
-		select {
-		case <-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10):
-		case <-r.pulseCh:
-		case <-r.stepdown.Ch():
+		if !r.waitForSignals(jitterTimeoutCh(r.heartbeatTimeout/10), r.pulseCh) {
 			return
 		}
-
 		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
 			r.raft.logger.Error("failed to heartbeat to", "peer", r.addr, "error", err)
 			backoff.next()
@@ -189,15 +180,17 @@ func (l *Leader) startReplication() {
 
 func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplication {
 	r := &peerReplication{
-		raft:           l.raft,
-		addr:           addr,
-		updateMatchIdx: l.commit.updateMatchIdx,
-		logAddedCh:     make(chan struct{}, 1),
-		currentTerm:    l.raft.getTerm(),
-		nextIdx:        lastIdx,
-		stepdown:       l.stepdown,
-		backoff:        newBackoff(10*time.Millisecond, 41960*time.Millisecond),
-		staging:        l.staging,
+		raft:               l.raft,
+		commitSyncInterval: l.raft.config.CommitSyncInterval,
+		heartbeatTimeout:   l.raft.config.HeartbeatTimeout,
+		addr:               addr,
+		updateMatchIdx:     l.commit.updateMatchIdx,
+		logAddedCh:         make(chan struct{}, 1),
+		currentTerm:        l.raft.getTerm(),
+		nextIdx:            lastIdx,
+		stepdown:           l.stepdown,
+		backoff:            newBackoff(10*time.Millisecond, 41960*time.Millisecond),
+		staging:            l.staging,
 	}
 	go r.run()
 	tryNotify(r.logAddedCh)
