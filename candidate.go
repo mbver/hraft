@@ -59,14 +59,14 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 func (c *Candidate) HandleHeartbeatTimeout() {}
 
 func (c *Candidate) HandleApply(a *Apply) {
-	trySendErr(a.errCh, ErrNotLeader)
+	trySend(a.errCh, ErrNotLeader)
 }
 
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}
 
 func (c *Candidate) HandleMembershipChange(change *membershipChange) {
-	trySendErr(change.errCh, ErrNotLeader)
+	trySend(change.errCh, ErrNotLeader)
 }
 
 type voteResult struct {

@@ -71,6 +71,8 @@ func (r *peerReplication) replicate() {
 		case <-time.After(r.backoff.getValue()):
 		case <-r.stepdown.Ch():
 			return
+		case <-r.raft.shutdownCh():
+			return
 		}
 		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
 		// skip snapshot stuffs for now
@@ -119,13 +121,10 @@ func (r *peerReplication) replicate() {
 		}
 		nextIdx = r.getNextIdx()
 	}
-	if r.stepdown.IsClosed() || r.staging == nil {
-		return
+	if !r.stepdown.IsClosed() && r.staging != nil &&
+		r.staging.isActive() && r.staging.getId() == r.addr {
+		trySend(r.staging.logSyncCh, r.addr)
 	}
-	if !r.staging.isActive() || r.staging.getId() != r.addr {
-		return
-	}
-	r.staging.logSyncCh <- r.addr
 }
 
 func (r *peerReplication) heartbeat(stopCh chan struct{}) {
@@ -141,6 +140,8 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		select {
 		case <-time.After(backoff.getValue()):
 		case <-stopCh:
+			return
+		case <-r.raft.shutdownCh():
 			return
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)

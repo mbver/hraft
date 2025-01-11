@@ -46,11 +46,11 @@ func (f *Follower) HandleHeartbeatTimeout() {
 }
 
 func (f *Follower) HandleApply(a *Apply) {
-	trySendErr(a.errCh, ErrNotLeader)
+	trySend(a.errCh, ErrNotLeader)
 }
 
 func (f *Follower) HandleCommitNotify() {}
 
 func (f *Follower) HandleMembershipChange(change *membershipChange) {
-	trySendErr(change.errCh, ErrNotLeader)
+	trySend(change.errCh, ErrNotLeader)
 }

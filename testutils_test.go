@@ -169,14 +169,14 @@ type discardCommandsApplier struct{}
 
 func (a *discardCommandsApplier) ApplyCommands(commits []*Commit) {
 	for _, c := range commits {
-		trySendErr(c.ErrCh, nil)
+		trySend(c.ErrCh, nil)
 	}
 }
 
 type discardMembershipApplier struct{}
 
 func (m *discardMembershipApplier) ApplyMembership(c *Commit) {
-	trySendErr(c.ErrCh, nil)
+	trySend(c.ErrCh, nil)
 }
 
 func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
@@ -224,7 +224,7 @@ func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
 			if raft.membership.isLocalVoter() {
 				return true, ""
 			}
-			return false, "unable to become voter"
+			return false, "unable to become voter: " + raft.ID()
 		})
 		if !success {
 			return nil, cleanup, fmt.Errorf("%s", msg)

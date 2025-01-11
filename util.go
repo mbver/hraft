@@ -89,17 +89,7 @@ func toBytes(u uint64) []byte {
 }
 
 func tryNotify(ch chan struct{}) {
-	select {
-	case ch <- struct{}{}:
-	default:
-	}
-}
-
-func trySendErr(ch chan error, err error) {
-	select {
-	case ch <- err:
-	default:
-	}
+	trySend(ch, struct{}{})
 }
 
 func jitterTimeoutCh(interval time.Duration) <-chan time.Time {
@@ -162,4 +152,11 @@ func max(a, b uint64) uint64 {
 		return a
 	}
 	return b
+}
+
+func trySend[T any](ch chan T, s T) {
+	select {
+	case ch <- s:
+	default:
+	}
 }

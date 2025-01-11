@@ -170,7 +170,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	if err := l.raft.logs.StoreLogs(logs); err != nil {
 		l.raft.logger.Error("failed to commit logs", "error", err)
 		for _, a := range applies {
-			trySendErr(a.errCh, err)
+			trySend(a.errCh, err)
 		}
 		// transition to follower
 		waitCh := l.raft.dispatchTransition(followerStateType, l.getTerm())
@@ -192,7 +192,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 
 func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	if !l.raft.membership.isStable() {
-		trySendErr(change.errCh, ErrMembershipUnstable)
+		trySend(change.errCh, ErrMembershipUnstable)
 		return
 	}
 	peers, err := l.raft.membership.newPeersFromChange(change)
@@ -224,9 +224,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	case addStaging:
 		l.staging.stage(change.addr)
 	case promotePeer:
-		if l.staging.getId() == change.addr {
-			l.staging.promote()
-		}
+		// DO NOTHING?
 	case demotePeer:
 		// TODO
 	case removePeer:

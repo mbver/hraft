@@ -194,7 +194,7 @@ func (r *Raft) applyCommits(commits []*Commit) {
 	case r.appstate.mutateCh <- commits:
 	case <-r.shutdown.Ch():
 		for _, c := range commits {
-			trySendErr(c.ErrCh, ErrRaftShutdown)
+			trySend(c.ErrCh, ErrRaftShutdown)
 		}
 	}
 }

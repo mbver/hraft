@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"sync"
+	"time"
 )
 
 // all channel buffer is 1
@@ -36,18 +37,7 @@ func (s *staging) getId() string {
 }
 
 func (s *staging) stage(id string) {
-	s.l.Lock()
-	defer s.l.Unlock()
-	s.id = id
-	s.active = true
 	s.stageCh <- id // TODO: have a timeout?
-}
-
-func (s *staging) promote() {
-	s.l.Lock()
-	defer s.l.Unlock()
-	s.active = false
-	s.promotedCh <- s.id
 }
 
 // the nested loop to ensure
@@ -58,7 +48,11 @@ func (l *Leader) receiveStaging() {
 		var id string
 		select {
 		case id = <-l.staging.stageCh:
-			l.receiveLogSynced(id)
+			l.staging.l.Lock()
+			l.staging.id = id
+			l.staging.active = true
+			l.staging.l.Unlock()
+			l.receiveLogSynced()
 		case <-l.stepdown.Ch():
 			return
 		case <-l.raft.shutdownCh():
@@ -67,34 +61,27 @@ func (l *Leader) receiveStaging() {
 	}
 }
 
-func (l *Leader) receiveLogSynced(stagingId string) {
-	for {
-		select {
-		case id := <-l.staging.logSyncCh:
-			if id != stagingId {
-				panic("staging_id not match logsync_id")
+func (l *Leader) receiveLogSynced() {
+	select {
+	case id := <-l.staging.logSyncCh:
+		l.staging.l.Lock()
+		l.staging.active = false
+		l.staging.l.Unlock()
+		for {
+			m := newMembershipChange(id, promotePeer)
+			l.raft.membershipChangeCh <- m
+			err := <-m.errCh
+			if err == ErrMembershipUnstable {
+				l.raft.logger.Warn("promote peer from staging: membership is unstable, retry", "peer", id)
+				time.Sleep(200 * time.Millisecond) // TODO: ADD TO CONFIG?
+				continue
 			}
-			l.raft.membershipChangeCh <- &membershipChange{id, promotePeer, nil}
-			l.receivePromoted(id)
-		case <-l.stepdown.Ch():
-			return
-		case <-l.raft.shutdownCh():
+			if err != nil {
+				panic(err) // ??? or just stepdown
+			}
 			return
 		}
-	}
-}
-
-func (l *Leader) receivePromoted(syncId string) {
-	for {
-		select {
-		case id := <-l.staging.promotedCh:
-			if id != syncId {
-				panic("promote_id not mach logsync_id")
-			}
-		case <-l.stepdown.Ch():
-			return
-		case <-l.raft.shutdownCh():
-			return
-		}
+	case <-l.stepdown.Ch():
+	case <-l.raft.shutdownCh():
 	}
 }
