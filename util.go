@@ -161,7 +161,7 @@ func trySend[T any](ch chan T, s T) {
 	}
 }
 
-func tryGetSignal(ch chan struct{}) bool {
+func tryGetNotify(ch chan struct{}) bool {
 	select {
 	case <-ch:
 		return true

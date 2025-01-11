@@ -66,7 +66,7 @@ func (r *peerReplication) run() {
 	go r.heartbeat()
 	for {
 		if !r.waitForSignals(jitterTimeoutCh(r.commitSyncInterval), r.logAddedCh) {
-			if tryGetSignal(r.stopCh) {
+			if tryGetNotify(r.stopCh) {
 				r.replicate()
 			}
 			return
