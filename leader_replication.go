@@ -38,27 +38,36 @@ func (r *peerReplication) setNextIdx(idx uint64) {
 	atomic.StoreUint64(&r.nextIdx, idx)
 }
 
+func (r *peerReplication) waitForSignals(timeCh <-chan time.Time, sigCh chan struct{}) (gotSignal bool) {
+	select {
+	case <-timeCh:
+		return true
+	case <-sigCh:
+		return true
+	case <-r.stopCh:
+		return false
+	case <-r.stepdown.Ch():
+		return false
+	case <-r.raft.shutdownCh():
+		return false
+	}
+}
+
 func (r *peerReplication) run() {
 	r.raft.wg.Add(1)
 	defer r.raft.wg.Done()
 	// Start an async heartbeating routing
-	stopHeartbeatCh := make(chan struct{})
-	defer close(stopHeartbeatCh)
-	go r.heartbeat(stopHeartbeatCh)
+	go r.heartbeat()
 	for {
-		select {
-		case <-r.stopCh:
-			r.replicate()
+		syncCommitCh := jitterTimeoutCh(r.raft.config.CommitSyncInterval)
+		gotSignal := r.waitForSignals(syncCommitCh, r.logAddedCh)
+		if !gotSignal {
+			if tryGetSignal(r.stopCh) {
+				r.replicate()
+			}
 			return
-		case <-r.stepdown.Ch():
-			return
-		case <-r.raft.shutdownCh():
-			return
-		case <-r.logAddedCh:
-			r.replicate()
-		case <-jitterTimeoutCh(r.raft.config.CommitSyncInterval):
-			r.replicate()
 		}
+		r.replicate()
 	}
 }
 
@@ -127,7 +136,7 @@ func (r *peerReplication) replicate() {
 	}
 }
 
-func (r *peerReplication) heartbeat(stopCh chan struct{}) {
+func (r *peerReplication) heartbeat() {
 	r.raft.wg.Add(1)
 	defer r.raft.wg.Done()
 	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
@@ -139,7 +148,7 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 	for {
 		select {
 		case <-time.After(backoff.getValue()):
-		case <-stopCh:
+		case <-r.stepdown.Ch():
 			return
 		case <-r.raft.shutdownCh():
 			return
@@ -148,7 +157,7 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 		select {
 		case <-jitterTimeoutCh(r.raft.config.HeartbeatTimeout / 10):
 		case <-r.pulseCh:
-		case <-stopCh:
+		case <-r.stepdown.Ch():
 			return
 		}
 
@@ -158,7 +167,6 @@ func (r *peerReplication) heartbeat(stopCh chan struct{}) {
 			continue
 		}
 		backoff.reset()
-		// TODO: verify if we are still leader and notify those waiting for leadership-check
 	}
 }
 

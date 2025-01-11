@@ -71,13 +71,10 @@ func (l *Leader) receiveLogSynced() {
 			m := newMembershipChange(id, promotePeer)
 			l.raft.membershipChangeCh <- m
 			err := <-m.errCh
-			if err == ErrMembershipUnstable {
+			if err != nil { // keep promote peer until successful or stopped
 				l.raft.logger.Warn("promote peer from staging: membership is unstable, retry", "peer", id)
 				time.Sleep(200 * time.Millisecond) // TODO: ADD TO CONFIG?
 				continue
-			}
-			if err != nil {
-				panic(err) // ??? or just stepdown
 			}
 			return
 		}

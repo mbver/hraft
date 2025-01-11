@@ -160,3 +160,12 @@ func trySend[T any](ch chan T, s T) {
 	default:
 	}
 }
+
+func tryGetSignal(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}

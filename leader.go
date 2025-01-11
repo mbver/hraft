@@ -220,14 +220,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	l.l.Lock()
 	l.startReplication()
 	l.l.Unlock()
-	switch change.changeType {
-	case addStaging:
+	if change.changeType == addStaging {
 		l.staging.stage(change.addr)
-	case promotePeer:
-		// DO NOTHING?
-	case demotePeer:
-		// TODO
-	case removePeer:
-		// TODO
 	}
 }
