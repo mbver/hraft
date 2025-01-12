@@ -76,7 +76,7 @@ type Raft struct {
 	membershipChangeCh chan *membershipChange
 	transitionCh       chan *Transition
 	heartbeatTimeout   *heartbeatTimeout
-	wg                 sync.WaitGroup
+	wg                 *ProtectedWaitGroup
 	shutdown           *ProtectedChan
 }
 

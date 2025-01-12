@@ -60,7 +60,10 @@ func (r *peerReplication) waitForSignals(timeCh <-chan time.Time, sigCh chan str
 }
 
 func (r *peerReplication) run() {
-	r.raft.wg.Add(1)
+	// don't run if raft is shutdown
+	if !r.raft.wg.Add(1) {
+		return
+	}
 	defer r.raft.wg.Done()
 	// Start an async heartbeating routing
 	go r.heartbeat()

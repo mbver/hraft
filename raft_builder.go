@@ -64,6 +64,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		membershipChangeCh: make(chan *membershipChange),
 		transitionCh:       make(chan *Transition), // buffer?
 		heartbeatTimeout:   newHeartbeatTimeout(b.config.HeartbeatTimeout),
+		wg:                 &ProtectedWaitGroup{},
 		shutdown:           newProtectedChan(),
 	}
 	raft.stateMap = NewStateMap(raft)

@@ -169,3 +169,31 @@ func tryGetNotify(ch chan struct{}) bool {
 		return false
 	}
 }
+
+// prevent calling wg.Add after wg.Wait
+type ProtectedWaitGroup struct {
+	l       sync.Mutex
+	wg      sync.WaitGroup
+	blocked bool
+}
+
+func (w *ProtectedWaitGroup) Add(n int) bool {
+	w.l.Lock()
+	defer w.l.Unlock()
+	if w.blocked {
+		return false
+	}
+	w.wg.Add(n)
+	return true
+}
+
+func (w *ProtectedWaitGroup) Done() {
+	w.wg.Done()
+}
+
+func (w *ProtectedWaitGroup) Wait() {
+	w.l.Lock()
+	w.blocked = true
+	w.l.Unlock()
+	w.wg.Wait()
+}
