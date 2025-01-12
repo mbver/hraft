@@ -37,6 +37,7 @@ func newApply(cmd []byte) *Apply {
 			Type: LogCommand,
 			Data: cmd,
 		},
+		errCh: make(chan error, 1),
 	}
 }
 

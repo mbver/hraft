@@ -170,6 +170,17 @@ func (m *discardMembershipApplier) ApplyMembership(c *Commit) {
 	trySend(c.ErrCh, nil)
 }
 
+type recordCommandsApplier struct {
+	commands []*Log
+}
+
+func (a *recordCommandsApplier) ApplyCommands(commits []*Commit) {
+	for _, c := range commits {
+		a.commands = append(a.commands, c.Log)
+		trySend(c.ErrCh, nil)
+	}
+}
+
 func createTestNodeFromAddr(addr string) (*Raft, error) {
 	b := &RaftBuilder{}
 
@@ -183,7 +194,7 @@ func createTestNodeFromAddr(addr string) (*Raft, error) {
 
 	b.WithLogger(newTestLogger(addr))
 
-	b.WithAppState(NewAppState(&discardCommandsApplier{}, &discardMembershipApplier{}, 1))
+	b.WithAppState(NewAppState(&recordCommandsApplier{}, &discardMembershipApplier{}, 1))
 
 	raft, err := b.Build()
 	if err != nil {
@@ -250,4 +261,8 @@ func createTestNode() (*Raft, func(), error) {
 	}
 	cleanup := combineCleanup(raft.Shutdown, addrSource.cleanup)
 	return raft, cleanup, err
+}
+
+func getRecordCommandState(r *Raft) []*Log {
+	return r.appstate.commandState.(*recordCommandsApplier).commands
 }

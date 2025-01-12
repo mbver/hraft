@@ -143,11 +143,6 @@ func (l *Leader) HandleCommitNotify() {
 	l.raft.instate.setLastApplied(commitIdx)
 }
 
-func (l *Leader) HandleApply(a *Apply) {
-	// get maxAppendentries items
-	// dispatch applies
-}
-
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
 	term := l.getTerm()
@@ -189,7 +184,25 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	l.l.Unlock()
 }
 
+func (l *Leader) HandleApply(a *Apply) {
+	// TODO: check leadership transfer?
+	batchSize := l.raft.config.MaxAppendEntries
+	batch := make([]*Apply, 0, batchSize)
+	batch = append(batch, a)
+	hasApplies := true
+	for i := 0; hasApplies && i < batchSize; i++ {
+		select {
+		case a := <-l.raft.applyCh:
+			batch = append(batch, a)
+		default:
+			hasApplies = false
+		}
+	}
+	l.dispatchApplies(batch)
+}
+
 func (l *Leader) HandleMembershipChange(change *membershipChange) {
+	// TODO: check for leadership transfer?
 	if !l.raft.membership.isStable() {
 		trySend(change.errCh, ErrMembershipUnstable)
 		return
