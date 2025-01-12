@@ -6,7 +6,7 @@ type Config struct {
 	LocalID            string
 	NoElect            bool // indicates no election occurs in the cluster
 	InitalPeers        []*Peer
-	ElectionTimeout    time.Duration
+	ElectionTimeout    time.Duration // election timeout is 150-300 ms
 	HeartbeatTimeout   time.Duration
 	CommitSyncInterval time.Duration
 	MaxAppendEntries   int

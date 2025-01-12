@@ -74,85 +74,84 @@ type voteResult struct {
 	Response *VoteResponse
 }
 
-// setup must be done before running election and collecting votes
-func (c *Candidate) setupElection() (chan *voteResult, error) {
-	c.cancel.Reset()
-	voteCh := make(chan *voteResult, len(c.getVoters()))
-	if err := c.raft.persistVote(c.getTerm(), []byte(c.raft.ID())); err != nil {
-		return nil, err
-	}
-	voteCh <- &voteResult{
-		VoterId: c.raft.ID(),
-		Response: &VoteResponse{
-			Granted: true,
-		},
-	}
-	return voteCh, nil
-}
-
-// term and vote handling. and how to send request vote
-func (c *Candidate) runElection(voteCh chan *voteResult) {
-	// dispatch vote requests to peers
-	lastIdx, lastTerm := c.raft.getLastLog()
-	req := &VoteRequest{
-		Term:        c.raft.getTerm(),
-		Candidate:   []byte(c.raft.ID()),
-		LastLogIdx:  lastIdx,
-		LastLogTerm: lastTerm,
-	}
-
-	for _, addr := range c.getVoters() {
-		if addr == c.raft.ID() {
-			continue
-		}
-		go func() {
-			// need wg??
-			res := &voteResult{
-				VoterId:  addr,
-				Response: &VoteResponse{},
-			}
-			err := c.raft.transport.RequestVote(addr, req, res.Response)
-			if err != nil {
-				c.raft.logger.Error("failed to make requestVote RPC",
-					"target", addr,
-					"error", err)
-				res.Response.Term = req.Term
-				res.Response.Granted = false
-			}
-			voteCh <- res
-		}()
-	}
-
-	// collecting votes
-	voteGranted := 0
-	voteNeeded := len(c.getVoters())/2 + 1
-	electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout) // ===== ELECTION TIME OUT IS FROM 150-300 ms
-	for voteGranted < voteNeeded {
-		select {
-		case vote := <-voteCh:
-			if vote.Response.Term > c.getTerm() {
-				c.raft.logger.Debug("newer term discovered, fallback to follower")
-				waitCh := c.raft.dispatchTransition(followerStateType, vote.Response.Term)
-				<-waitCh
-				return
-			}
-			resp := vote.Response
-			if resp.Granted {
-				voteGranted++
-				c.raft.logger.Debug("vote granted", "from", vote.VoterId, "term", resp.Term, "tally", voteGranted)
-			}
-			// check vote and increase quorum
-		case <-c.cancel.Ch():
-			return
-		case <-electionTimeoutCh: // quit election, transition back to follower. OR START NEW ELECTION?
+func (c *Candidate) runElection() {
+ELECTION:
+	for {
+		// setup election
+		c.cancel.Reset()
+		voteCh := make(chan *voteResult, len(c.getVoters()))
+		if err := c.raft.persistVote(c.getTerm(), []byte(c.raft.ID())); err != nil {
 			waitCh := c.raft.dispatchTransition(followerStateType, c.getTerm())
 			<-waitCh
 			return
-		case <-c.raft.shutdownCh():
-			return
 		}
+		voteCh <- &voteResult{
+			VoterId: c.raft.ID(),
+			Response: &VoteResponse{
+				Granted: true,
+			},
+		}
+
+		// dispatch vote requests to peers
+		lastIdx, lastTerm := c.raft.getLastLog()
+		req := &VoteRequest{
+			Term:        c.raft.getTerm(),
+			Candidate:   []byte(c.raft.ID()),
+			LastLogIdx:  lastIdx,
+			LastLogTerm: lastTerm,
+		}
+
+		for _, addr := range c.getVoters() {
+			if addr == c.raft.ID() {
+				continue
+			}
+			go func() {
+				res := &voteResult{
+					VoterId:  addr,
+					Response: &VoteResponse{},
+				}
+				err := c.raft.transport.RequestVote(addr, req, res.Response)
+				if err != nil {
+					c.raft.logger.Error("failed to make requestVote RPC",
+						"target", addr,
+						"error", err)
+					res.Response.Term = req.Term
+					res.Response.Granted = false
+				}
+				voteCh <- res
+			}()
+		}
+
+		// collecting votes
+		voteGranted := 0
+		voteNeeded := len(c.getVoters())/2 + 1
+		electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout)
+		for voteGranted < voteNeeded {
+			select {
+			case vote := <-voteCh:
+				if vote.Response.Term > c.getTerm() {
+					c.raft.logger.Debug("newer term discovered, fallback to follower")
+					waitCh := c.raft.dispatchTransition(followerStateType, vote.Response.Term)
+					<-waitCh
+					return
+				}
+				resp := vote.Response
+				if resp.Granted {
+					voteGranted++
+					c.raft.logger.Debug("vote granted", "from", vote.VoterId, "term", resp.Term, "tally", voteGranted)
+				}
+			case <-c.cancel.Ch():
+				return
+			case <-electionTimeoutCh: // election timeout, try again
+				continue ELECTION
+			case <-c.raft.shutdownCh():
+				return
+			}
+		}
+		// win election, become leader
+		c.raft.logger.Info("election won", "tally", voteGranted)
+		waitCh := c.raft.dispatchTransition(leaderStateType, c.getTerm())
+		<-waitCh
+		return
 	}
-	c.raft.logger.Info("election won", "tally", voteGranted)
-	waitCh := c.raft.dispatchTransition(leaderStateType, c.getTerm())
-	<-waitCh
 }
