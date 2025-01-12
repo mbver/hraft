@@ -1,7 +1,6 @@
 package hraft
 
 import (
-	"container/list"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,7 +12,7 @@ type Leader struct {
 	raft           *Raft
 	active         bool
 	commit         *commitControl
-	inflight       *list.List
+	inflight       *inflight
 	replicationMap map[string]*peerReplication
 	staging        *staging
 	verifyReqCh    chan struct{}
@@ -23,6 +22,7 @@ type Leader struct {
 func NewLeader(r *Raft) *Leader {
 	l := &Leader{
 		raft:           r,
+		inflight:       newInflight(),
 		replicationMap: map[string]*peerReplication{},
 		stepdown:       newResetableProtectedChan(),
 		verifyReqCh:    make(chan struct{}),
@@ -53,7 +53,7 @@ func (l *Leader) StepUp() {
 	}
 	commitIdx := l.raft.instate.getCommitIdx()
 	l.commit = newCommitControl(commitIdx, l.raft.commitNotifyCh)
-	l.inflight = list.New()
+	l.inflight.Reset()
 	l.startReplication()
 	go l.receiveStaging()
 	go l.receiveVerifyRequests()
@@ -81,7 +81,6 @@ func (l *Leader) Stepdown() {
 	l.stepdown.Close()
 	// TODO: wait until all goros stop
 	l.replicationMap = map[string]*peerReplication{}
-	l.inflight = nil
 	// TODO: transition to follower
 }
 
@@ -164,7 +163,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 		a.log.Idx = lastIndex
 		a.log.Term = term
 		logs[idx] = a.log
-		l.inflight.PushBack(a)
+		l.inflight.Pushback(a)
 	}
 	// Write the log entry locally
 	if err := l.raft.logs.StoreLogs(logs); err != nil {
