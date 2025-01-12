@@ -9,7 +9,7 @@ import (
 
 func TestCluster_StartStop(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3, false)
+	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
 	time.Sleep(2 * time.Second)
@@ -17,18 +17,17 @@ func TestCluster_StartStop(t *testing.T) {
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 }
 
-func TestCluster_NoElect_StartStop(t *testing.T) {
+func TestNode_NoBootstrap_StartStop(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3, true)
+	raft, cleanup, err := createTestNode()
 	defer cleanup()
 	require.Nil(t, err)
 	time.Sleep(2 * time.Second)
-	require.Equal(t, 3, len(c.getNodesByState(followerStateType)))
-	require.Equal(t, 0, len(c.getNodesByState(leaderStateType)))
+	require.True(t, raft.getStateType() == followerStateType)
 }
 
 func TestRaft_AfterShutdown(t *testing.T) {
-	c, cleanup, err := createTestCluster(1, false)
+	c, cleanup, err := createTestCluster(1)
 	defer cleanup()
 	require.Nil(t, err)
 	c.close()

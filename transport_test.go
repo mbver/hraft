@@ -21,6 +21,7 @@ func TestNetTransport_StartStop(t *testing.T) {
 	addr := addresses.next()
 	trans, err := newTestTransport(addr)
 	require.Nil(t, err)
+	time.Sleep(50 * time.Millisecond)
 	trans.Close()
 }
 

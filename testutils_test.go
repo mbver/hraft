@@ -170,7 +170,29 @@ func (m *discardMembershipApplier) ApplyMembership(c *Commit) {
 	trySend(c.ErrCh, nil)
 }
 
-func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
+func createTestNodeFromAddr(addr string) (*Raft, error) {
+	b := &RaftBuilder{}
+
+	conf := defaultTestConfig(addr)
+	b.WithConfig(conf)
+
+	b.WithTransportConfig(testTransportConfigFromAddr(addr))
+
+	b.WithLogStore(newInMemLogStore())
+	b.WithKVStore(newInMemKVStore())
+
+	b.WithLogger(newTestLogger(addr))
+
+	b.WithAppState(NewAppState(&discardCommandsApplier{}, &discardMembershipApplier{}, 1))
+
+	raft, err := b.Build()
+	if err != nil {
+		return nil, err
+	}
+	return raft, nil
+}
+
+func createTestCluster(n int) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addresses := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -180,22 +202,7 @@ func createTestCluster(n int, noElect bool) (*cluster, func(), error) {
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
 	var first *Raft
 	for i, addr := range addresses {
-		b := &RaftBuilder{}
-
-		conf := defaultTestConfig(addr)
-		conf.NoElect = noElect
-		b.WithConfig(conf)
-
-		b.WithTransportConfig(testTransportConfigFromAddr(addr))
-
-		b.WithLogStore(newInMemLogStore())
-		b.WithKVStore(newInMemKVStore())
-
-		b.WithLogger(newTestLogger(addr))
-
-		b.WithAppState(NewAppState(&discardCommandsApplier{}, &discardMembershipApplier{}, 1))
-
-		raft, err := b.Build()
+		raft, err := createTestNodeFromAddr(addr)
 		if err != nil {
 			return nil, cleanup, err
 		}
@@ -232,4 +239,15 @@ func retry(n int, f func() (bool, string)) (success bool, msg string) {
 		}
 	}
 	return
+}
+
+func createTestNode() (*Raft, func(), error) {
+	addrSource := newTestAddressesWithSameIP()
+	addr := addrSource.next()
+	raft, err := createTestNodeFromAddr(addr)
+	if err != nil {
+		return nil, addrSource.cleanup, err
+	}
+	cleanup := combineCleanup(raft.Shutdown, addrSource.cleanup)
+	return raft, cleanup, err
 }
