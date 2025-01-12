@@ -118,7 +118,9 @@ func (l *Leader) HandleCommitNotify() {
 	batchSize := l.raft.config.MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
 	// handle logs after stepping up
-	for e := first; e != nil; e = e.Next() {
+	l.inflight.l.Lock()
+	e := first
+	for e != nil {
 		a := e.Value.(*Apply)
 		if a.log.Idx > commitIdx {
 			break
@@ -128,12 +130,16 @@ func (l *Leader) HandleCommitNotify() {
 			continue
 		}
 		batch = append(batch, &Commit{a.log, a.errCh})
-		l.inflight.Remove(e)
 		if len(batch) == batchSize {
 			l.raft.applyCommits(batch)
 			batch = make([]*Commit, 0, batchSize)
 		}
+		next := e.Next()
+		l.inflight.list.Remove(e)
+		e = next
 	}
+
+	l.inflight.l.Unlock()
 	if len(batch) > 0 {
 		l.raft.applyCommits(batch)
 	}
@@ -150,7 +156,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 
 	n := len(applies)
 	logs := make([]*Log, n)
-
+	l.inflight.l.Lock()
 	for idx, a := range applies {
 		a.dispatchedAt = now     // DO WE NEED THIS?
 		a.log.DispatchedAt = now // CONSIDER SKIPPING?
@@ -158,8 +164,9 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 		a.log.Idx = lastIndex
 		a.log.Term = term
 		logs[idx] = a.log
-		l.inflight.Pushback(a)
+		l.inflight.list.PushBack(a)
 	}
+	l.inflight.l.Unlock()
 	// Write the log entry locally
 	if err := l.raft.logs.StoreLogs(logs); err != nil {
 		l.raft.logger.Error("failed to commit logs", "error", err)

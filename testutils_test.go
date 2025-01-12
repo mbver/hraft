@@ -1,6 +1,7 @@
 package hraft
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"strconv"
@@ -156,29 +157,88 @@ func (c *cluster) getNodesByState(state RaftStateType) []*Raft {
 	return res
 }
 
-type discardCommandsApplier struct{}
-
-func (a *discardCommandsApplier) ApplyCommands(commits []*Commit) {
-	for _, c := range commits {
-		trySend(c.ErrCh, nil)
-	}
+func logsEqual(log1, log2 *Log) bool {
+	return log1.Idx == log2.Idx &&
+		log1.Term == log2.Term &&
+		log1.Type == log2.Type &&
+		bytes.Equal(log1.Data, log2.Data) &&
+		log1.DispatchedAt.Equal(log2.DispatchedAt)
 }
 
-type discardMembershipApplier struct{}
+func compareStates(state1, state2 []*Log) bool {
+	if len(state1) != len(state2) {
+		return false
+	}
+	for i := range state1 {
+		if !logsEqual(state1[i], state2[i]) {
+			return false
+		}
+	}
+	return true
+}
 
-func (m *discardMembershipApplier) ApplyMembership(c *Commit) {
-	trySend(c.ErrCh, nil)
+func (c *cluster) isConsistent() bool {
+	firstCommands := getRecordCommandState(c.rafts[0])
+	for _, raft := range c.rafts[1:] {
+		state := getRecordCommandState(raft)
+		if !compareStates(firstCommands, state) {
+			return false
+		}
+	}
+	firstMembership := getRecordMembershipState(c.rafts[0])
+	for _, raft := range c.rafts[1:] {
+		state := getRecordMembershipState(raft)
+		if !compareStates(firstMembership, state) {
+			return false
+		}
+	}
+	return true
 }
 
 type recordCommandsApplier struct {
+	l        sync.Mutex
 	commands []*Log
 }
 
 func (a *recordCommandsApplier) ApplyCommands(commits []*Commit) {
+	a.l.Lock()
+	defer a.l.Unlock()
 	for _, c := range commits {
 		a.commands = append(a.commands, c.Log)
 		trySend(c.ErrCh, nil)
 	}
+}
+
+func getRecordCommandState(r *Raft) []*Log {
+	state := r.appstate.commandState.(*recordCommandsApplier)
+	state.l.Lock()
+	defer state.l.Unlock()
+	return copyLogs(state.commands)
+}
+
+func copyLogs(in []*Log) []*Log {
+	res := make([]*Log, len(in))
+	copy(res, in)
+	return res
+}
+
+type recordMembershipApplier struct {
+	l    sync.Mutex
+	logs []*Log
+}
+
+func (a *recordMembershipApplier) ApplyMembership(c *Commit) {
+	a.l.Lock()
+	defer a.l.Unlock()
+	a.logs = append(a.logs, c.Log)
+	trySend(c.ErrCh, nil)
+}
+
+func getRecordMembershipState(r *Raft) []*Log {
+	state := r.appstate.membershipState.(*recordMembershipApplier)
+	state.l.Lock()
+	defer state.l.Unlock()
+	return copyLogs(state.logs)
 }
 
 func createTestNodeFromAddr(addr string) (*Raft, error) {
@@ -194,7 +254,7 @@ func createTestNodeFromAddr(addr string) (*Raft, error) {
 
 	b.WithLogger(newTestLogger(addr))
 
-	b.WithAppState(NewAppState(&recordCommandsApplier{}, &discardMembershipApplier{}, 1))
+	b.WithAppState(NewAppState(&recordCommandsApplier{}, &recordMembershipApplier{}, 1))
 
 	raft, err := b.Build()
 	if err != nil {
@@ -261,8 +321,4 @@ func createTestNode() (*Raft, func(), error) {
 	}
 	cleanup := combineCleanup(raft.Shutdown, addrSource.cleanup)
 	return raft, cleanup, err
-}
-
-func getRecordCommandState(r *Raft) []*Log {
-	return r.appstate.commandState.(*recordCommandsApplier).commands
 }

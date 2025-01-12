@@ -82,7 +82,7 @@ func (r *peerReplication) replicate() {
 	uptoIdx, _ := r.raft.getLastLog()
 	<-jitterTimeoutCh(r.heartbeatTimeout / 10)
 	nextIdx := r.getNextIdx()
-	for nextIdx <= uptoIdx && !r.stepdown.IsClosed() {
+	for !r.stepdown.IsClosed() {
 		if !r.waitForSignals(time.After(r.backoff.getValue()), nil) {
 			return
 		}
@@ -132,6 +132,9 @@ func (r *peerReplication) replicate() {
 			r.updateMatchIdx(r.addr, lastEntry.Idx)
 		}
 		nextIdx = r.getNextIdx()
+		if nextIdx > uptoIdx {
+			break
+		}
 	}
 	if r.onStage {
 		tryNotify(r.logSyncCh)

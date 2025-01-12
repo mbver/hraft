@@ -22,18 +22,6 @@ func (f *inflight) Front() *list.Element {
 	return f.list.Front()
 }
 
-func (f *inflight) Pushback(a *Apply) *list.Element {
-	f.l.Lock()
-	defer f.l.Unlock()
-	return f.list.PushBack(a)
-}
-
-func (f *inflight) Remove(e *list.Element) any {
-	f.l.Lock()
-	defer f.l.Unlock()
-	return f.list.Remove(e)
-}
-
 func (f *inflight) Reset() {
 	f.l.Lock()
 	defer f.l.Unlock()

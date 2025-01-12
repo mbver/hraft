@@ -160,6 +160,7 @@ type Commit struct {
 func (r *Raft) handleNewLeaderCommit(idx uint64) {
 	lastApplied := r.instate.getLastApplied()
 	if idx <= lastApplied {
+		r.logger.Warn("ignore old applied logs", "idx", idx)
 		return
 	}
 	batchSize := r.config.MaxAppendEntries
