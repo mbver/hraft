@@ -100,6 +100,13 @@ func jitterTimeoutCh(interval time.Duration) <-chan time.Time {
 	return time.After(interval + j)
 }
 
+func getTimeoutCh(timeout time.Duration) <-chan time.Time {
+	if timeout == 0 {
+		return nil
+	}
+	return time.After(timeout)
+}
+
 type backoff struct {
 	l     sync.Mutex
 	value time.Duration
