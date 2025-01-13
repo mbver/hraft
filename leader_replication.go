@@ -69,7 +69,7 @@ func (r *peerReplication) run() {
 	go r.heartbeat()
 	for {
 		if !r.waitForSignals(jitterTimeoutCh(r.commitSyncInterval), r.logAddedCh) {
-			if tryGetNotify(r.stopCh) {
+			if !tryGetNotify(r.raft.shutdownCh()) {
 				r.replicate()
 			}
 			return
@@ -81,11 +81,9 @@ func (r *peerReplication) run() {
 func (r *peerReplication) replicate() {
 	uptoIdx, _ := r.raft.getLastLog()
 	<-jitterTimeoutCh(r.heartbeatTimeout / 10)
-	nextIdx := r.getNextIdx()
-	for !r.stepdown.IsClosed() {
-		if !r.waitForSignals(time.After(r.backoff.getValue()), nil) {
-			return
-		}
+	var nextIdx uint64
+	for {
+		nextIdx = r.getNextIdx()
 		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
 		// skip snapshot stuffs for now
 		if err != nil { // reporting error and stop node ??
@@ -114,26 +112,28 @@ func (r *peerReplication) replicate() {
 			<-waitCh
 			return
 		}
-		if !res.Success {
-			nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
-			r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
-			r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
-			// if failure is NOT because of log
-			// inconsistencies, further delay backoff.
-			if !res.PrevLogCheckFailed {
-				r.backoff.next()
+		if res.Success {
+			r.backoff.reset()
+			if len(req.Entries) > 0 {
+				lastEntry := req.Entries[len(req.Entries)-1]
+				r.setNextIdx(lastEntry.Idx + 1)
+				r.updateMatchIdx(r.addr, lastEntry.Idx)
+			}
+			if r.getNextIdx() > uptoIdx || r.stepdown.IsClosed() {
+				break
 			}
 			continue
 		}
-		r.backoff.reset()
-		if len(req.Entries) > 0 {
-			lastEntry := req.Entries[len(req.Entries)-1]
-			r.setNextIdx(lastEntry.Idx + 1)
-			r.updateMatchIdx(r.addr, lastEntry.Idx)
+		nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
+		r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
+		r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
+		// if failure is NOT because of log
+		// inconsistencies, further delay backoff.
+		if !res.PrevLogCheckFailed {
+			r.backoff.next()
 		}
-		nextIdx = r.getNextIdx()
-		if nextIdx > uptoIdx {
-			break
+		if !r.waitForSignals(time.After(r.backoff.getValue()), nil) {
+			return
 		}
 	}
 	if r.onStage {

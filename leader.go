@@ -88,13 +88,10 @@ func (l *Leader) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case followerStateType:
 		term := l.getTerm()
-		if trans.Term > term {
+		if trans.Term >= term {
 			l.Stepdown() // wait for all goros stop?
 			l.raft.setTerm(trans.Term)
 			l.raft.setStateType(followerStateType)
-		}
-		if trans.Term == term {
-			panic("two leaders of the same term!")
 		}
 	}
 }
@@ -143,10 +140,14 @@ func (l *Leader) HandleCommitNotify() {
 	if len(batch) > 0 {
 		l.raft.applyCommits(batch)
 	}
+	l.raft.instate.setLastApplied(commitIdx)
 	if _, latestIdx := l.raft.membership.getLatest(); latestIdx <= commitIdx {
 		l.raft.membership.setCommitted(l.raft.membership.getLatest())
+		if l.raft.membership.getPeer(l.raft.ID()) != RoleVoter {
+			waitCh := l.raft.dispatchTransition(followerStateType, l.getTerm())
+			<-waitCh
+		}
 	}
-	l.raft.instate.setLastApplied(commitIdx)
 }
 
 func (l *Leader) dispatchApplies(applies []*Apply) {

@@ -144,6 +144,48 @@ func TestRaft_RemoveFollower(t *testing.T) {
 
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower0.Voters()))
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower1.Voters()))
+	require.Equal(t, RoleAbsent, leader.membership.getPeer(follower0.ID()))
+
+	require.True(t, c.isConsistent())
+}
+
+func TestRaft_RemoveLeader(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
+
+	err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
+	require.Nil(t, err)
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, followerStateType, leader.getStateType(), fmt.Sprintf("wrong state type: %s", leader.getStateType()))
+
+	success, msg := retry(5, func() (bool, string) {
+		time.Sleep(100 * time.Millisecond)
+		if len(c.getNodesByState(followerStateType)) != 2 {
+			return false, "not enough followers"
+		}
+		return true, ""
+	})
+
+	require.True(t, success, msg)
+
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType))) // including the old leader
+	follower := c.getNodesByState(followerStateType)[1]
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	oldLeader := leader
+	leader = c.getNodesByState(leaderStateType)[0]
+
+	require.Equal(t, 2, len(follower.Voters()))
+	require.Equal(t, 2, len(oldLeader.Voters()))
+	require.Equal(t, 2, len(leader.Voters()))
+
+	require.True(t, reflect.DeepEqual(leader.Voters(), oldLeader.Voters()))
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower.Voters()))
 
 	require.True(t, c.isConsistent())
 }
