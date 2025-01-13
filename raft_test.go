@@ -53,7 +53,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
 
-	numApplies := 2
+	numApplies := 100
 	errCh := make(chan error, numApplies)
 	for i := 0; i < numApplies; i++ {
 		go func(i int) {

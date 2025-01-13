@@ -165,10 +165,7 @@ func (r *Raft) handleNewLeaderCommit(idx uint64) {
 	}
 	batchSize := r.config.MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
-	for i := lastApplied; i <= idx; i++ {
-		if i == 0 { // ========== this is ugly
-			continue
-		}
+	for i := lastApplied + 1; i <= idx; i++ {
 		l := &Log{}
 		if err := r.logs.GetLog(i, l); err != nil {
 			r.logger.Error("failed to get log", "index", i, "error", err)
