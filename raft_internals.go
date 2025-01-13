@@ -313,24 +313,26 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 		<-waitCh
 		resp.Term = req.Term
 	}
-	if r.getStateType() != followerStateType { // don't grant vote if we are not in follower state
+	if r.getStateType() != followerStateType { // don't grant vote if we are candidate/leader
 		return
 	}
 
 	candidate := req.Candidate
-	// Check if we have voted yet
+	// Check if we have voted
 	lastVoteTerm, err := r.kvs.GetUint64(keyLastVoteTerm)
-	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+	if err != nil && !errors.Is(err, ErrKeyNotFound) { // it's ok if we haven't voted
 		r.logger.Error("failed to get last vote term", "error", err)
 		return
 	}
 	lastCandidate, err := r.kvs.Get(keyLastVoteCand)
-	if err != nil && !errors.Is(err, ErrKeyNotFound) {
+	if err != nil && !errors.Is(err, ErrKeyNotFound) { // it's ok if we haven't voted
 		r.logger.Error("failed to get last vote candidate", "error", err)
 		return
 	}
 
-	// Check if we've voted in this election before
+	// If a node is granted vote but fails to receive by network failures,
+	// it should receive that in next election (of the same term).
+	// When we voted for a node, we will not transition to candidate in that term.
 	if lastVoteTerm == req.Term {
 		r.logger.Info("duplicate requestVote for same term", "term", req.Term)
 		if bytes.Equal(candidate, lastCandidate) {
@@ -358,7 +360,7 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 		return
 	}
 
-	// Persist a vote for safety
+	// Persist a vote in case it fails to receive and ask again.
 	if err := r.persistVote(req.Term, req.Candidate); err != nil {
 		r.logger.Error("failed to persist vote", "error", err)
 		return

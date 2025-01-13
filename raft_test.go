@@ -161,20 +161,21 @@ func TestRaft_RemoveLeader(t *testing.T) {
 
 	err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
 	require.Nil(t, err)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, followerStateType, leader.getStateType(), fmt.Sprintf("wrong state type: %s", leader.getStateType()))
 
-	success, msg := retry(5, func() (bool, string) {
+	success, msg := retry(10, func() (bool, string) {
 		time.Sleep(100 * time.Millisecond)
 		if len(c.getNodesByState(followerStateType)) != 2 {
 			return false, "not enough followers"
 		}
+		if len(c.getNodesByState(leaderStateType)) != 1 {
+			return false, "no leader"
+		}
 		return true, ""
 	})
-
 	require.True(t, success, msg)
 
-	require.Equal(t, 2, len(c.getNodesByState(followerStateType))) // including the old leader
 	follower := c.getNodesByState(followerStateType)[1]
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	oldLeader := leader
