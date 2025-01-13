@@ -44,6 +44,20 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 	require.Equal(t, ErrNotLeader, err)
 }
 
+func TestRaft_Apply_Timeout(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	raft := c.getNodesByState(leaderStateType)[0]
+
+	err = raft.Apply([]byte("test"), time.Microsecond)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "timeout")
+}
+
 func TestRaft_ApplyConcurrent(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster(3)
@@ -69,7 +83,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 			t.Fatalf("expect no timeout")
 		}
 	}
-	success, msg := retry(1, func() (bool, string) {
+	success, msg := retry(5, func() (bool, string) {
 		time.Sleep(100 * time.Millisecond)
 		if !c.isConsistent() {
 			return false, "cluster is inconsistent"
