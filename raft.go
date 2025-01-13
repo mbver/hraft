@@ -15,7 +15,7 @@ var (
 type RaftStateType uint32
 
 const (
-	followerStateType = iota
+	followerStateType RaftStateType = iota
 	candidateStateType
 	leaderStateType
 )

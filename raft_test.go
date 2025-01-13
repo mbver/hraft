@@ -3,6 +3,7 @@ package hraft
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -117,4 +118,32 @@ func TestCluster_SingleNode(t *testing.T) {
 	require.Equal(t, 1, len(commands))
 	require.True(t, bytes.Equal([]byte("test"), commands[0].Data))
 	require.Equal(t, uint64(2), commands[0].Idx)
+}
+
+func TestRaft_RemoveFollower(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(2 * time.Second)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
+	follower0 := c.getNodesByState(followerStateType)[0]
+	follower1 := c.getNodesByState(followerStateType)[1]
+
+	err = leader.RemovePeer(follower0.ID(), 500*time.Millisecond)
+	require.Nil(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, followerStateType, follower0.getStateType())
+
+	require.Equal(t, 2, len(leader.Voters()))
+	require.Equal(t, 2, len(follower0.Voters()))
+	require.Equal(t, 2, len(follower1.Voters()))
+
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower0.Voters()))
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower1.Voters()))
+
+	require.True(t, c.isConsistent())
 }

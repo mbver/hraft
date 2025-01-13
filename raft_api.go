@@ -59,6 +59,15 @@ func (r *Raft) AddVoter(addr string, timeout time.Duration) error {
 	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
 }
 
+func (r *Raft) RemovePeer(addr string, timeout time.Duration) error {
+	m := newMembershipChange(addr, removePeer)
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
+}
+
 // Bootstrap is called only once on the first node in a cluster.
 // Subsequent calls will return an error that can be safely ignored.
 // Later nodes are not bootstraped and added via AddVoter.
