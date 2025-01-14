@@ -108,9 +108,12 @@ func (l *Leader) HandleCommitNotify() {
 		l.raft.handleNewLeaderCommit(commitIdx)
 		return
 	}
-	firstIdx := first.Value.(*Apply).log.Idx
 	// handle logs from previous leader
-	l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
+	firstIdx := first.Value.(*Apply).log.Idx
+	lastApplied := l.raft.instate.getLastApplied()
+	if firstIdx-1 > lastApplied {
+		l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
+	}
 
 	batchSize := l.raft.config.MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
