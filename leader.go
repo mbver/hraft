@@ -241,7 +241,11 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	}})
 	l.raft.membership.setLatest(peers, log.Idx)
 	l.commit.updateVoters(l.raft.Voters())
-	if change.changeType == addStaging {
+	switch change.changeType {
+	case removePeer:
+		l.stopPeerReplication(change.addr)
+		return
+	case addStaging:
 		l.staging.stage(change.addr)
 	}
 	l.l.Lock()

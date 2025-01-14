@@ -196,6 +196,7 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		currentTerm:        l.raft.getTerm(),
 		nextIdx:            lastIdx,
 		stepdown:           l.stepdown,
+		stopCh:             make(chan struct{}),
 		backoff:            newBackoff(10*time.Millisecond, 41960*time.Millisecond),
 		logSyncCh:          l.staging.logSyncCh,
 	}

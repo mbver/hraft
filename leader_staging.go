@@ -54,13 +54,13 @@ func (l *Leader) receiveStaging() {
 
 func (l *Leader) receiveLogSynced() {
 	select {
-	case id := <-l.staging.logSyncCh:
+	case <-l.staging.logSyncCh:
 		for {
 			m := newMembershipChange(l.staging.getId(), promotePeer)
 			l.raft.membershipChangeCh <- m
 			err := <-m.errCh
 			if err == ErrMembershipUnstable { // keep promote peer until successful or stopped
-				l.raft.logger.Warn("promote peer from staging: membership is unstable, retry", "peer", id)
+				l.raft.logger.Warn("promote peer from staging: membership is unstable, retry", "peer", m.addr)
 				time.Sleep(200 * time.Millisecond) // TODO: ADD TO CONFIG?
 				continue
 			}

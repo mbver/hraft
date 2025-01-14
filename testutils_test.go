@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,8 +129,9 @@ func defaultTestConfig(addr string) *Config {
 }
 
 type cluster struct {
-	wg    sync.WaitGroup
-	rafts []*Raft
+	wg     sync.WaitGroup
+	rafts  []*Raft
+	closed bool
 }
 
 func (c *cluster) add(raft *Raft) {
@@ -137,7 +139,19 @@ func (c *cluster) add(raft *Raft) {
 	c.wg.Add(1)
 }
 
+func (c *cluster) remove(addr string) {
+	for i, raft := range c.rafts {
+		if raft.ID() == addr {
+			c.rafts = append(c.rafts[:i], c.rafts[i+1:]...)
+			c.wg.Done()
+		}
+	}
+}
 func (c *cluster) close() {
+	if c.closed {
+		return
+	}
+	c.closed = true
 	for _, raft := range c.rafts {
 		go func() {
 			defer c.wg.Done()
@@ -193,6 +207,16 @@ func (c *cluster) isConsistent() bool {
 		}
 	}
 	return true
+}
+
+func logsToString(logs []*Log) string {
+	buf := strings.Builder{}
+	buf.WriteRune('[')
+	for _, log := range logs {
+		buf.WriteString(fmt.Sprintf("{%d, %d, %s},", log.Term, log.Idx, log.Type.String()))
+	}
+	buf.WriteRune(']')
+	return buf.String()
 }
 
 type recordCommandsApplier struct {

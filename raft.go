@@ -81,6 +81,9 @@ type Raft struct {
 }
 
 func (r *Raft) Shutdown() {
+	if r.shutdown.IsClosed() {
+		return
+	}
 	r.shutdown.Close()
 	r.wg.Wait()
 	r.appstate.Stop()

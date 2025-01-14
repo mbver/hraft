@@ -10,6 +10,18 @@ const (
 	LogNoOp
 )
 
+func (t LogType) String() string {
+	switch t {
+	case LogCommand:
+		return "log_command"
+	case LogMembership:
+		return "log_membership"
+	case LogNoOp:
+		return "log_no_op"
+	}
+	return "unknown_log_type"
+}
+
 type Log struct {
 	Idx          uint64
 	Term         uint64

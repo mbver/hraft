@@ -136,17 +136,73 @@ func TestRaft_RemoveFollower(t *testing.T) {
 	require.Nil(t, err)
 
 	time.Sleep(100 * time.Millisecond)
-	require.Equal(t, followerStateType, follower0.getStateType())
 
 	require.Equal(t, 2, len(leader.Voters()))
-	require.Equal(t, 2, len(follower0.Voters()))
-	require.Equal(t, 2, len(follower1.Voters()))
+	require.Equal(t, followerStateType, follower0.getStateType())
 
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower0.Voters()))
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower1.Voters()))
 	require.Equal(t, RoleAbsent, leader.membership.getPeer(follower0.ID()))
 
+	c.remove(follower0.ID())
+	defer follower0.Shutdown()
 	require.True(t, c.isConsistent())
+}
+
+func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(2 * time.Second)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
+	follower0 := c.getNodesByState(followerStateType)[0]
+	follower1 := c.getNodesByState(followerStateType)[1]
+
+	err = leader.RemovePeer(follower0.ID(), 500*time.Millisecond)
+	require.Nil(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, followerStateType, follower0.getStateType())
+
+	require.Equal(t, 2, len(leader.Voters()))
+
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower0.Voters()))
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower1.Voters()))
+	require.Equal(t, RoleAbsent, leader.membership.getPeer(follower0.ID()))
+
+	c.remove(follower0.ID())
+	defer follower0.Shutdown()
+	require.True(t, c.isConsistent())
+
+	err = leader.AddVoter(follower0.ID(), 0)
+	require.Nil(t, err)
+	c.add(follower0)
+	success, msg := retry(10, func() (bool, string) {
+		time.Sleep(100 * time.Millisecond)
+		if len(leader.Voters()) != 3 {
+			return false, "not enough voters"
+		}
+		if len(follower0.Voters()) != 3 || len(follower1.Voters()) != 3 {
+			return false, "not enough voters for follower"
+		}
+		return true, ""
+	})
+	require.True(t, success, msg)
+
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower0.Voters()), fmt.Sprintf("expect: %v, got: %v", leader.Voters(), follower0.Voters()))
+	require.True(t, reflect.DeepEqual(leader.Voters(), follower1.Voters()), fmt.Sprintf("expect: %v, got: %v", leader.Voters(), follower1.Voters()))
+	require.Equal(t, RoleVoter, leader.membership.getPeer(follower0.ID()))
+	success, msg = retry(5, func() (bool, string) {
+		time.Sleep(100 * time.Millisecond)
+		if !c.isConsistent() {
+			return false, "inconsistent state"
+		}
+		return true, ""
+	})
+	require.True(t, success, msg)
 }
 
 func TestRaft_RemoveLeader(t *testing.T) {
