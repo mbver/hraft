@@ -244,3 +244,33 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 
 	require.True(t, c.isConsistent())
 }
+
+func TestRaft_AddKnownPeer(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
+	follower0 := c.getNodesByState(followerStateType)[0]
+	err = leader.AddVoter(follower0.ID(), 0)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "peer exists with role voter")
+}
+
+func TestRaft_RemoveUnknownPeer(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
+
+	err = leader.RemovePeer("8.8.8.8:8888", 0)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "unable to find peer")
+}

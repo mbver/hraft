@@ -221,6 +221,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	peers, err := l.raft.membership.newPeersFromChange(change)
 	if err != nil {
 		l.raft.logger.Error("unable to create new peers from change", "error", err)
+		change.errCh <- err
 		return
 	}
 	encoded, err := encode(peers)
