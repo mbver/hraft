@@ -7,20 +7,20 @@ import (
 )
 
 type RaftBuilder struct {
-	config          *Config
-	transportConfig *NetTransportConfig
-	appState        *AppState
-	logStore        LogStore
-	kvStore         KVStore
-	logger          hclog.Logger
+	config    *Config
+	transport Transport
+	appState  *AppState
+	logStore  LogStore
+	kvStore   KVStore
+	logger    hclog.Logger
 }
 
 func (b *RaftBuilder) WithConfig(c *Config) {
 	b.config = c
 }
 
-func (b *RaftBuilder) WithTransportConfig(c *NetTransportConfig) {
-	b.transportConfig = c
+func (b *RaftBuilder) WithTransport(t Transport) {
+	b.transport = t
 }
 
 func (b *RaftBuilder) WithAppState(a *AppState) {
@@ -43,10 +43,6 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 	if !validateConfig(b.config) {
 		return nil, fmt.Errorf("invalid config")
 	}
-	transport, err := NewNetTransport(b.transportConfig, b.logger)
-	if err != nil {
-		return nil, err
-	}
 	raft := &Raft{
 		config:             b.config,
 		logger:             b.logger,
@@ -56,9 +52,9 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		state:              followerStateType,
 		logs:               b.logStore,
 		kvs:                b.kvStore,
-		transport:          transport,
-		heartbeatCh:        transport.HeartbeatCh(),
-		rpchCh:             transport.RpcCh(),
+		transport:          b.transport,
+		heartbeatCh:        b.transport.HeartbeatCh(),
+		rpchCh:             b.transport.RpcCh(),
 		applyCh:            make(chan *Apply),
 		commitNotifyCh:     make(chan struct{}, 1),
 		membershipChangeCh: make(chan *membershipChange),

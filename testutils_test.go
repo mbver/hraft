@@ -51,6 +51,45 @@ func newTestLogger(name string) hclog.Logger {
 	})
 }
 
+type PartionableTransport struct {
+	net *NetTransport
+}
+
+func (t *PartionableTransport) block(addr string) {}
+
+func (t *PartionableTransport) unblock(addr string) {}
+
+func (t *PartionableTransport) AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error {
+	return t.net.AppendEntries(addr, req, res)
+}
+
+func (t *PartionableTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
+	return t.net.RequestVote(addr, req, res)
+}
+
+func (t *PartionableTransport) Close() {
+	t.net.Close()
+}
+
+func (t *PartionableTransport) HeartbeatCh() chan *RPC {
+	return t.net.HeartbeatCh()
+}
+
+func (t *PartionableTransport) RpcCh() chan *RPC {
+	return t.net.RpcCh()
+}
+
+func newPartionableTransport(addr string, logger hclog.Logger) (*PartionableTransport, error) {
+	config := testTransportConfigFromAddr(addr)
+	netTrans, err := NewNetTransport(config, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &PartionableTransport{
+		net: netTrans,
+	}, err
+}
+
 func newTestTransport(addr string) (*NetTransport, error) {
 	config := testTransportConfigFromAddr(addr)
 	logger := newTestLogger(fmt.Sprintf("transport:%s", addr))
@@ -271,12 +310,16 @@ func createTestNodeFromAddr(addr string) (*Raft, error) {
 	conf := defaultTestConfig(addr)
 	b.WithConfig(conf)
 
-	b.WithTransportConfig(testTransportConfigFromAddr(addr))
-
 	b.WithLogStore(newInMemLogStore())
 	b.WithKVStore(newInMemKVStore())
 
 	b.WithLogger(newTestLogger(addr))
+
+	trans, err := newPartionableTransport(addr, b.logger)
+	if err != nil {
+		return nil, err
+	}
+	b.WithTransport(trans)
 
 	b.WithAppState(NewAppState(&recordCommandsApplier{}, &recordMembershipApplier{}, 1))
 

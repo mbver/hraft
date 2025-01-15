@@ -116,6 +116,8 @@ type Transport interface {
 	Close()
 	AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error
 	RequestVote(addr string, req *VoteRequest, res *VoteResponse) error
+	HeartbeatCh() chan *RPC
+	RpcCh() chan *RPC
 }
 
 type NetTransportConfig struct {
