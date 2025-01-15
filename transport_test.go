@@ -284,6 +284,6 @@ func TestNetTransport_WithAdvertiseAddress(t *testing.T) {
 	require.NotZero(t, len(ips))
 	addr := net.JoinHostPort(ips[0].String(), "12345")
 	conf.AdvertiseAddr = addr
-	_, err = NewNetTransport(conf, newTestLogger("test-with-advertise-address"))
+	_, err = NewNetTransport(conf, newTestLogger("test-with-advertise-address"), nil)
 	require.Nil(t, err)
 }

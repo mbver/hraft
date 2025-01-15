@@ -112,14 +112,6 @@ func (p *peerConn) readResp(res interface{}) error {
 	return p.dec.Decode(res)
 }
 
-type Transport interface {
-	Close()
-	AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error
-	RequestVote(addr string, req *VoteRequest, res *VoteResponse) error
-	HeartbeatCh() chan *RPC
-	RpcCh() chan *RPC
-}
-
 type NetTransportConfig struct {
 	BindAddr      string
 	AdvertiseAddr string
@@ -135,6 +127,7 @@ type NetTransport struct {
 	closed        *ProtectedChan
 	connPool      map[string][]*peerConn
 	poolL         sync.Mutex
+	connGetter    ConnGetter
 	receivedConns map[net.Conn]struct{}
 	receivedConnL sync.Mutex
 	// seems no need for context, just use shutdownCh
@@ -159,7 +152,7 @@ func isValidAdvertiseAddr(a string) error {
 	return nil
 }
 
-func NewNetTransport(config *NetTransportConfig, logger hclog.Logger) (*NetTransport, error) {
+func NewNetTransport(config *NetTransportConfig, logger hclog.Logger, connGetter ConnGetter) (*NetTransport, error) {
 	l, err := net.Listen("tcp", config.BindAddr)
 	if err != nil {
 		return nil, err
@@ -181,6 +174,11 @@ func NewNetTransport(config *NetTransportConfig, logger hclog.Logger) (*NetTrans
 		heartbeatCh:   make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
 		rpcCh:         make(chan *RPC), // ======= do we buffer?
 	}
+	if connGetter == nil {
+		connGetter = &TransparentConnGetter{}
+	}
+	connGetter.SetTransport(t)
+	t.connGetter = connGetter
 	go t.listen()
 	return t, nil
 }
@@ -289,6 +287,27 @@ func (t *NetTransport) connectPeer(addr string) (*peerConn, error) {
 		enc:  codec.NewEncoder(w, &codec.MsgpackHandle{}),
 		dec:  codec.NewDecoder(bufio.NewReader(conn), &codec.MsgpackHandle{}),
 	}, nil
+}
+
+// this interface assists testing
+// where we need to partion network
+type ConnGetter interface {
+	GetConn(addr string) (*peerConn, error)
+	SetTransport(t *NetTransport)
+}
+
+// for real-use, don't interfere
+// into network connection management
+type TransparentConnGetter struct {
+	net *NetTransport
+}
+
+func (g *TransparentConnGetter) GetConn(addr string) (*peerConn, error) {
+	return g.net.getConn(addr)
+}
+
+func (t *TransparentConnGetter) SetTransport(net *NetTransport) {
+	t.net = net
 }
 
 func (t *NetTransport) getConn(addr string) (*peerConn, error) {

@@ -51,49 +51,10 @@ func newTestLogger(name string) hclog.Logger {
 	})
 }
 
-type PartionableTransport struct {
-	net *NetTransport
-}
-
-func (t *PartionableTransport) block(addr string) {}
-
-func (t *PartionableTransport) unblock(addr string) {}
-
-func (t *PartionableTransport) AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error {
-	return t.net.AppendEntries(addr, req, res)
-}
-
-func (t *PartionableTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
-	return t.net.RequestVote(addr, req, res)
-}
-
-func (t *PartionableTransport) Close() {
-	t.net.Close()
-}
-
-func (t *PartionableTransport) HeartbeatCh() chan *RPC {
-	return t.net.HeartbeatCh()
-}
-
-func (t *PartionableTransport) RpcCh() chan *RPC {
-	return t.net.RpcCh()
-}
-
-func newPartionableTransport(addr string, logger hclog.Logger) (*PartionableTransport, error) {
-	config := testTransportConfigFromAddr(addr)
-	netTrans, err := NewNetTransport(config, logger)
-	if err != nil {
-		return nil, err
-	}
-	return &PartionableTransport{
-		net: netTrans,
-	}, err
-}
-
 func newTestTransport(addr string) (*NetTransport, error) {
 	config := testTransportConfigFromAddr(addr)
 	logger := newTestLogger(fmt.Sprintf("transport:%s", addr))
-	return NewNetTransport(config, logger)
+	return NewNetTransport(config, logger, nil)
 }
 
 func combineCleanup(cleanups ...func()) func() {
@@ -109,7 +70,7 @@ func newTestTransportWithLogger(logger hclog.Logger) (*NetTransport, func(), err
 	cleanup1 := addresses.cleanup
 	addr := addresses.next()
 	config := testTransportConfigFromAddr(addr)
-	trans, err := NewNetTransport(config, logger)
+	trans, err := NewNetTransport(config, logger, nil)
 	if err != nil {
 		return nil, cleanup1, err
 	}
@@ -304,6 +265,38 @@ func getRecordMembershipState(r *Raft) []*Log {
 	return copyLogs(state.logs)
 }
 
+type BlockableConnGetter struct {
+	l       sync.Mutex
+	net     *NetTransport
+	blocked map[string]bool
+}
+
+func (b *BlockableConnGetter) GetConn(addr string) (*peerConn, error) {
+	b.l.Lock()
+	blocked := b.blocked[addr]
+	b.l.Unlock()
+	if blocked {
+		return b.net.getConn(addr)
+	}
+	return nil, fmt.Errorf("transport to %s is blocked", addr)
+}
+
+func (b *BlockableConnGetter) SetTransport(net *NetTransport) {
+	b.net = net
+}
+
+func (b *BlockableConnGetter) block(addr string) {
+	b.l.Lock()
+	b.blocked[addr] = true
+	b.l.Unlock()
+}
+
+func (b *BlockableConnGetter) unblock(addr string) {
+	b.l.Lock()
+	b.blocked[addr] = false
+	b.l.Unlock()
+}
+
 func createTestNodeFromAddr(addr string) (*Raft, error) {
 	b := &RaftBuilder{}
 
@@ -314,12 +307,8 @@ func createTestNodeFromAddr(addr string) (*Raft, error) {
 	b.WithKVStore(newInMemKVStore())
 
 	b.WithLogger(newTestLogger(addr))
-
-	trans, err := newPartionableTransport(addr, b.logger)
-	if err != nil {
-		return nil, err
-	}
-	b.WithTransport(trans)
+	b.WithTransportConfig(testTransportConfigFromAddr(addr))
+	b.WithConnGetter(&BlockableConnGetter{})
 
 	b.WithAppState(NewAppState(&recordCommandsApplier{}, &recordMembershipApplier{}, 1))
 
