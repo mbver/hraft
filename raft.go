@@ -68,7 +68,7 @@ type Raft struct {
 	stateMap           map[RaftStateType]State
 	logs               LogStore
 	kvs                KVStore
-	transport          *netTransport
+	transport          Transport
 	heartbeatCh        chan *RPC
 	rpchCh             chan *RPC
 	applyCh            chan *Apply

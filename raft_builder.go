@@ -43,7 +43,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 	if !validateConfig(b.config) {
 		return nil, fmt.Errorf("invalid config")
 	}
-	transport, err := newNetTransport(b.transportConfig, b.logger)
+	transport, err := NewNetTransport(b.transportConfig, b.logger)
 	if err != nil {
 		return nil, err
 	}

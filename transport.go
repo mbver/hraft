@@ -112,6 +112,12 @@ func (p *peerConn) readResp(res interface{}) error {
 	return p.dec.Decode(res)
 }
 
+type Transport interface {
+	Close()
+	AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error
+	RequestVote(addr string, req *VoteRequest, res *VoteResponse) error
+}
+
 type NetTransportConfig struct {
 	BindAddr      string
 	AdvertiseAddr string
@@ -120,7 +126,7 @@ type NetTransportConfig struct {
 	PoolSize      int
 }
 
-type netTransport struct {
+type NetTransport struct {
 	wg            sync.WaitGroup
 	config        *NetTransportConfig
 	logger        hclog.Logger
@@ -151,7 +157,7 @@ func isValidAdvertiseAddr(a string) error {
 	return nil
 }
 
-func newNetTransport(config *NetTransportConfig, logger hclog.Logger) (*netTransport, error) {
+func NewNetTransport(config *NetTransportConfig, logger hclog.Logger) (*NetTransport, error) {
 	l, err := net.Listen("tcp", config.BindAddr)
 	if err != nil {
 		return nil, err
@@ -163,7 +169,7 @@ func newNetTransport(config *NetTransportConfig, logger hclog.Logger) (*netTrans
 		l.Close()
 		return nil, err
 	}
-	t := &netTransport{
+	t := &NetTransport{
 		config:        config,
 		logger:        logger,
 		closed:        newProtectedChan(),
@@ -177,23 +183,23 @@ func newNetTransport(config *NetTransportConfig, logger hclog.Logger) (*netTrans
 	return t, nil
 }
 
-func (t *netTransport) LocalAddr() string {
+func (t *NetTransport) LocalAddr() string {
 	return t.listener.Addr().String()
 }
 
-func (t *netTransport) AdvertiseAddr() string {
+func (t *NetTransport) AdvertiseAddr() string {
 	return t.config.AdvertiseAddr
 }
 
-func (t *netTransport) AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error {
+func (t *NetTransport) AppendEntries(addr string, req *AppendEntriesRequest, res *AppendEntriesResponse) error {
 	return t.unaryRPC(addr, appendEntriesMsgType, req, res)
 }
 
-func (t *netTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
+func (t *NetTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
 	return t.unaryRPC(addr, requestVoteMsgType, req, res)
 }
 
-func (t *netTransport) unaryRPC(addr string, mType msgType, req interface{}, res interface{}) error {
+func (t *NetTransport) unaryRPC(addr string, mType msgType, req interface{}, res interface{}) error {
 	conn, err := t.getConn(addr)
 	if err != nil {
 		return err
@@ -213,15 +219,15 @@ func (t *netTransport) unaryRPC(addr string, mType msgType, req interface{}, res
 	return nil
 }
 
-func (t *netTransport) HeartbeatCh() chan *RPC {
+func (t *NetTransport) HeartbeatCh() chan *RPC {
 	return t.heartbeatCh
 }
 
-func (t *netTransport) RpcCh() chan *RPC {
+func (t *NetTransport) RpcCh() chan *RPC {
 	return t.rpcCh
 }
 
-func (t *netTransport) Close() {
+func (t *NetTransport) Close() {
 	if t.closed.IsClosed() {
 		return
 	}
@@ -232,7 +238,7 @@ func (t *netTransport) Close() {
 	t.wg.Wait()
 }
 
-func (t *netTransport) ClearReceivedConns() {
+func (t *NetTransport) ClearReceivedConns() {
 	t.receivedConnL.Lock()
 	defer t.receivedConnL.Unlock()
 	for conn := range t.receivedConns {
@@ -240,7 +246,7 @@ func (t *netTransport) ClearReceivedConns() {
 	}
 }
 
-func (t *netTransport) ClearPool() {
+func (t *NetTransport) ClearPool() {
 	t.poolL.Lock()
 	defer t.poolL.Unlock()
 
@@ -252,7 +258,7 @@ func (t *netTransport) ClearPool() {
 	}
 }
 
-func (t *netTransport) getPooledConn(id string) *peerConn {
+func (t *NetTransport) getPooledConn(id string) *peerConn {
 	t.poolL.Lock()
 	defer t.poolL.Unlock()
 
@@ -268,7 +274,7 @@ func (t *netTransport) getPooledConn(id string) *peerConn {
 	return conn
 }
 
-func (t *netTransport) connectPeer(addr string) (*peerConn, error) {
+func (t *NetTransport) connectPeer(addr string) (*peerConn, error) {
 	conn, err := net.DialTimeout("tcp", addr, t.config.Timeout)
 	if err != nil {
 		return nil, err
@@ -283,14 +289,14 @@ func (t *netTransport) connectPeer(addr string) (*peerConn, error) {
 	}, nil
 }
 
-func (t *netTransport) getConn(addr string) (*peerConn, error) {
+func (t *NetTransport) getConn(addr string) (*peerConn, error) {
 	if conn := t.getPooledConn(addr); conn != nil {
 		return conn, nil
 	}
 	return t.connectPeer(addr)
 }
 
-func (t *netTransport) returnConn(conn *peerConn) {
+func (t *NetTransport) returnConn(conn *peerConn) {
 	t.poolL.Lock()
 	defer t.poolL.Unlock()
 
@@ -304,7 +310,7 @@ func (t *netTransport) returnConn(conn *peerConn) {
 	t.connPool[addr] = append(conns, conn)
 }
 
-func (t *netTransport) listen() {
+func (t *NetTransport) listen() {
 	t.wg.Add(1)
 	defer t.wg.Done()
 	backoff := newBackoff(5*time.Millisecond, time.Second)
@@ -330,7 +336,7 @@ func (t *netTransport) listen() {
 	}
 }
 
-func (t *netTransport) handleConn(conn net.Conn) {
+func (t *NetTransport) handleConn(conn net.Conn) {
 	t.wg.Add(1)
 	defer t.wg.Done()
 	defer func() {
@@ -370,7 +376,7 @@ func isHeartbeat(req *AppendEntriesRequest) bool {
 		len(req.Entries) == 0 && req.LeaderCommitIdx == 0
 }
 
-func (t *netTransport) handleMessage(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
+func (t *NetTransport) handleMessage(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
 	// Get the rpc type
 	b, err := r.ReadByte()
 	if err != nil {
@@ -397,7 +403,7 @@ func newRPC(command interface{}) *RPC {
 	}
 }
 
-func (t *netTransport) handleAppendEntries(dec *codec.Decoder, enc *codec.Encoder) error {
+func (t *NetTransport) handleAppendEntries(dec *codec.Decoder, enc *codec.Encoder) error {
 	var req AppendEntriesRequest
 	if err := dec.Decode(&req); err != nil {
 		return err
@@ -410,7 +416,7 @@ func (t *netTransport) handleAppendEntries(dec *codec.Decoder, enc *codec.Encode
 	return dispatchWaitRespond(rpc, rpcCh, enc, t.closed.Ch())
 }
 
-func (t *netTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder) error {
+func (t *NetTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder) error {
 	var req VoteRequest
 	if err := dec.Decode(&req); err != nil {
 		return err
@@ -419,7 +425,7 @@ func (t *netTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder)
 	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.closed.Ch())
 }
 
-func (t *netTransport) handleInstallSnapshot(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
+func (t *NetTransport) handleInstallSnapshot(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
 	var req InstallSnapshotRequest
 	if err := dec.Decode(&req); err != nil {
 		return err
@@ -429,7 +435,7 @@ func (t *netTransport) handleInstallSnapshot(r *bufio.Reader, dec *codec.Decoder
 	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.closed.Ch())
 }
 
-func (n *netTransport) handleRpcTimeoutNow(dec *codec.Decoder, enc *codec.Encoder) error { // WHAT THE HECK IS THIS?
+func (n *NetTransport) handleRpcTimeoutNow(dec *codec.Decoder, enc *codec.Encoder) error { // WHAT THE HECK IS THIS?
 	return nil
 }
 

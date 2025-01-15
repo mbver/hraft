@@ -51,10 +51,10 @@ func newTestLogger(name string) hclog.Logger {
 	})
 }
 
-func newTestTransport(addr string) (*netTransport, error) {
+func newTestTransport(addr string) (*NetTransport, error) {
 	config := testTransportConfigFromAddr(addr)
 	logger := newTestLogger(fmt.Sprintf("transport:%s", addr))
-	return newNetTransport(config, logger)
+	return NewNetTransport(config, logger)
 }
 
 func combineCleanup(cleanups ...func()) func() {
@@ -65,19 +65,19 @@ func combineCleanup(cleanups ...func()) func() {
 	}
 }
 
-func newTestTransportWithLogger(logger hclog.Logger) (*netTransport, func(), error) {
+func newTestTransportWithLogger(logger hclog.Logger) (*NetTransport, func(), error) {
 	addresses := newTestAddressesWithSameIP()
 	cleanup1 := addresses.cleanup
 	addr := addresses.next()
 	config := testTransportConfigFromAddr(addr)
-	trans, err := newNetTransport(config, logger)
+	trans, err := NewNetTransport(config, logger)
 	if err != nil {
 		return nil, cleanup1, err
 	}
 	return trans, combineCleanup(cleanup1, trans.Close), nil
 }
 
-func twoTestTransport() (*netTransport, *netTransport, func(), error) {
+func twoTestTransport() (*NetTransport, *NetTransport, func(), error) {
 	addresses := newTestAddressesWithSameIP()
 	cleanup1 := addresses.cleanup
 	addr1 := addresses.next()

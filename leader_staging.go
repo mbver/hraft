@@ -56,6 +56,10 @@ func (l *Leader) receiveLogSynced() {
 	select {
 	case <-l.staging.logSyncCh:
 		for {
+			// ======== this is ugly
+			if l.stepdown.IsClosed() || l.raft.shutdown.IsClosed() {
+				return
+			}
 			m := newMembershipChange(l.staging.getId(), promotePeer)
 			l.raft.membershipChangeCh <- m
 			err := <-m.errCh
