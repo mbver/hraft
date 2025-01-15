@@ -10,12 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func sleep() {
+	time.Sleep(200 * time.Millisecond)
+}
+
 func TestRaft_NoBootstrap_StartStop(t *testing.T) {
 	t.Parallel()
 	raft, cleanup, err := createTestNode()
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.True(t, raft.getStateType() == followerStateType)
 }
 
@@ -38,7 +42,7 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 	raft := c.getNodesByState(followerStateType)[0]
 	err = raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
@@ -50,7 +54,7 @@ func TestRaft_Apply_Timeout(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
 
@@ -64,7 +68,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
 
@@ -99,7 +103,7 @@ func TestCluster_StartStop(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 }
@@ -108,7 +112,7 @@ func TestCluster_SingleNode(t *testing.T) {
 	c, cleanup, err := createTestCluster(1)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 0, len(c.getNodesByState(followerStateType)))
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
@@ -125,7 +129,7 @@ func TestRaft_RemoveFollower(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -154,7 +158,7 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -210,7 +214,7 @@ func TestRaft_RemoveFollower_SplitCluster(t *testing.T) {
 	c, cleanup, err := createTestCluster(4)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(500 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	followers := c.getNodesByState(followerStateType)
@@ -229,7 +233,7 @@ func TestRaft_RemoveLeader(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(100 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -271,7 +275,7 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(100 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -325,7 +329,7 @@ func TestRaft_AddKnownPeer(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(100 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -340,7 +344,7 @@ func TestRaft_RemoveUnknownPeer(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(100 * time.Millisecond)
+	sleep()
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -348,4 +352,73 @@ func TestRaft_RemoveUnknownPeer(t *testing.T) {
 	err = leader.RemovePeer("8.8.8.8:8888", 0)
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "unable to find peer")
+}
+
+func TestRaft_VerifyLeader(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	success := leader.VerifyLeader(500 * time.Millisecond)
+	require.True(t, success)
+}
+
+func TestRaft_VerifyLeader_Single(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(1)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	success := leader.VerifyLeader(500 * time.Millisecond)
+	require.True(t, success)
+}
+
+func TestRaft_VerifyLeader_Fail(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(2)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	require.Equal(t, 1, len(c.getNodesByState(followerStateType)))
+	follower := c.getNodesByState(followerStateType)[0]
+
+	follower.setTerm(follower.getTerm() + 1)
+
+	sleep()
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	oldLeader := leader
+	require.Equal(t, followerStateType, oldLeader.getStateType())
+	require.Equal(t, 1, len(c.getNodesByState(followerStateType)))
+	leader = follower
+	require.Equal(t, leaderStateType, leader.getStateType())
+
+	success := oldLeader.VerifyLeader(500 * time.Millisecond)
+	require.False(t, success)
+}
+
+func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
+	follower0 := c.getNodesByState(followerStateType)[0]
+
+	c.partition(follower0.ID())
+	sleep()
+	success := leader.VerifyLeader(500 * time.Millisecond)
+	require.True(t, success)
 }
