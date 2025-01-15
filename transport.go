@@ -297,7 +297,7 @@ type ConnGetter interface {
 }
 
 // for real-use, don't interfere
-// into network connection management
+// with network connection management
 type TransparentConnGetter struct {
 	net *NetTransport
 }

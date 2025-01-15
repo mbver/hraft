@@ -129,9 +129,10 @@ func defaultTestConfig(addr string) *Config {
 }
 
 type cluster struct {
-	wg     sync.WaitGroup
-	rafts  []*Raft
-	closed bool
+	wg            sync.WaitGroup
+	rafts         []*Raft
+	closed        bool
+	connGetterMap map[string]*BlockableConnGetter
 }
 
 func (c *cluster) add(raft *Raft) {
@@ -147,6 +148,33 @@ func (c *cluster) remove(addr string) {
 		}
 	}
 }
+
+func (c *cluster) getConnGetter(addr string) *BlockableConnGetter {
+	return c.connGetterMap[addr]
+}
+
+func (c *cluster) partition(addr1, addr2 string) {
+	getConn1, ok := c.connGetterMap[addr1]
+	if ok {
+		getConn1.block(addr2)
+	}
+	getConn2, ok := c.connGetterMap[addr2]
+	if ok {
+		getConn2.block(addr1)
+	}
+}
+
+func (c *cluster) unPartition(addr1, addr2 string) {
+	getConn1, ok := c.connGetterMap[addr1]
+	if ok {
+		getConn1.unblock(addr2)
+	}
+	getConn2, ok := c.connGetterMap[addr2]
+	if ok {
+		getConn2.unblock(addr1)
+	}
+}
+
 func (c *cluster) close() {
 	if c.closed {
 		return
@@ -297,7 +325,7 @@ func (b *BlockableConnGetter) unblock(addr string) {
 	b.l.Unlock()
 }
 
-func createTestNodeFromAddr(addr string) (*Raft, error) {
+func createTestNodeFromAddr(addr string) (*Raft, *BlockableConnGetter, error) {
 	b := &RaftBuilder{}
 
 	conf := defaultTestConfig(addr)
@@ -308,15 +336,16 @@ func createTestNodeFromAddr(addr string) (*Raft, error) {
 
 	b.WithLogger(newTestLogger(addr))
 	b.WithTransportConfig(testTransportConfigFromAddr(addr))
-	b.WithConnGetter(&BlockableConnGetter{})
+	connGetter := &BlockableConnGetter{}
+	b.WithConnGetter(connGetter)
 
 	b.WithAppState(NewAppState(&recordCommandsApplier{}, &recordMembershipApplier{}, 1))
 
 	raft, err := b.Build()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return raft, nil
+	return raft, connGetter, nil
 }
 
 func createTestCluster(n int) (*cluster, func(), error) {
@@ -325,15 +354,18 @@ func createTestCluster(n int) (*cluster, func(), error) {
 	for i := 0; i < n; i++ {
 		addresses[i] = addrSource.next()
 	}
-	cluster := &cluster{}
+	cluster := &cluster{
+		connGetterMap: map[string]*BlockableConnGetter{},
+	}
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
 	var first *Raft
 	for i, addr := range addresses {
-		raft, err := createTestNodeFromAddr(addr)
+		raft, connGetter, err := createTestNodeFromAddr(addr)
 		if err != nil {
 			return nil, cleanup, err
 		}
 		cluster.add(raft)
+		cluster.connGetterMap[raft.ID()] = connGetter
 		if i == 0 {
 			first = raft
 			if err := first.Bootstrap(1000 * time.Millisecond); err != nil {
@@ -371,7 +403,7 @@ func retry(n int, f func() (bool, string)) (success bool, msg string) {
 func createTestNode() (*Raft, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addr := addrSource.next()
-	raft, err := createTestNodeFromAddr(addr)
+	raft, _, err := createTestNodeFromAddr(addr)
 	if err != nil {
 		return nil, addrSource.cleanup, err
 	}
