@@ -109,7 +109,7 @@ func (r *Raft) appendEntries(entries []*Log) error {
 				r.logger.Error("failed to clear log suffix", "error", err)
 				return err
 			}
-			if _, latestIdx := r.membership.getLatest(); latestIdx <= entry.Idx {
+			if _, latestIdx := r.membership.getLatest(); latestIdx >= entry.Idx {
 				r.membership.rollbackToCommitted()
 			}
 			// get new-entries

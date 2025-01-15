@@ -153,7 +153,29 @@ func (c *cluster) getConnGetter(addr string) *BlockableConnGetter {
 	return c.connGetterMap[addr]
 }
 
-func (c *cluster) partition(addr1, addr2 string) {
+func isInList(addr string, addrs []string) bool {
+	for _, a := range addrs {
+		if a == addr {
+			return true
+		}
+	}
+	return false
+}
+
+// partition isolates specified nodes from the cluster.
+// this split the cluster into 2 partitions.
+// the nodes in a partition are still connected.
+func (c *cluster) partition(addrs ...string) {
+	for addr0 := range c.connGetterMap {
+		if !isInList(addr0, addrs) {
+			for _, addr1 := range addrs {
+				c.disconnect(addr0, addr1)
+			}
+		}
+	}
+}
+
+func (c *cluster) disconnect(addr1, addr2 string) {
 	getConn1, ok := c.connGetterMap[addr1]
 	if ok {
 		getConn1.block(addr2)
@@ -164,7 +186,19 @@ func (c *cluster) partition(addr1, addr2 string) {
 	}
 }
 
-func (c *cluster) unPartition(addr1, addr2 string) {
+// unPartition takes a list of nodes in a partion
+// and reconnect them with other nodes in the cluster
+func (c *cluster) unPartition(addrs ...string) {
+	for addr0 := range c.connGetterMap {
+		if !isInList(addr0, addrs) {
+			for _, addr1 := range addrs {
+				c.reconnect(addr0, addr1)
+			}
+		}
+	}
+}
+
+func (c *cluster) reconnect(addr1, addr2 string) {
 	getConn1, ok := c.connGetterMap[addr1]
 	if ok {
 		getConn1.unblock(addr2)
@@ -299,11 +333,16 @@ type BlockableConnGetter struct {
 	blocked map[string]bool
 }
 
+func newBlockableConnGetter() *BlockableConnGetter {
+	return &BlockableConnGetter{
+		blocked: map[string]bool{},
+	}
+}
 func (b *BlockableConnGetter) GetConn(addr string) (*peerConn, error) {
 	b.l.Lock()
 	blocked := b.blocked[addr]
 	b.l.Unlock()
-	if blocked {
+	if !blocked {
 		return b.net.getConn(addr)
 	}
 	return nil, fmt.Errorf("transport to %s is blocked", addr)
@@ -336,7 +375,7 @@ func createTestNodeFromAddr(addr string) (*Raft, *BlockableConnGetter, error) {
 
 	b.WithLogger(newTestLogger(addr))
 	b.WithTransportConfig(testTransportConfigFromAddr(addr))
-	connGetter := &BlockableConnGetter{}
+	connGetter := newBlockableConnGetter()
 	b.WithConnGetter(connGetter)
 
 	b.WithAppState(NewAppState(&recordCommandsApplier{}, &recordMembershipApplier{}, 1))

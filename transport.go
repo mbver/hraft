@@ -200,7 +200,7 @@ func (t *NetTransport) RequestVote(addr string, req *VoteRequest, res *VoteRespo
 }
 
 func (t *NetTransport) unaryRPC(addr string, mType msgType, req interface{}, res interface{}) error {
-	conn, err := t.getConn(addr)
+	conn, err := t.connGetter.GetConn(addr)
 	if err != nil {
 		return err
 	}

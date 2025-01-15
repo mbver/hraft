@@ -15,7 +15,7 @@ func TestRaft_NoBootstrap_StartStop(t *testing.T) {
 	raft, cleanup, err := createTestNode()
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 	require.True(t, raft.getStateType() == followerStateType)
 }
 
@@ -38,7 +38,7 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 	raft := c.getNodesByState(followerStateType)[0]
 	err = raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
@@ -50,7 +50,7 @@ func TestRaft_Apply_Timeout(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
 
@@ -64,7 +64,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
 
@@ -99,7 +99,7 @@ func TestCluster_StartStop(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 }
@@ -108,7 +108,7 @@ func TestCluster_SingleNode(t *testing.T) {
 	c, cleanup, err := createTestCluster(1)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 0, len(c.getNodesByState(followerStateType)))
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
@@ -125,7 +125,7 @@ func TestRaft_RemoveFollower(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -154,7 +154,7 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 	c, cleanup, err := createTestCluster(3)
 	defer cleanup()
 	require.Nil(t, err)
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
@@ -203,6 +203,25 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 		return true, ""
 	})
 	require.True(t, success, msg)
+}
+
+func TestRaft_RemoveFollower_SplitCluster(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(4)
+	defer cleanup()
+	require.Nil(t, err)
+	time.Sleep(500 * time.Millisecond)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	followers := c.getNodesByState(followerStateType)
+	require.Equal(t, 3, len(followers))
+	// split the cluster to two partitions
+	c.partition(followers[0].ID(), followers[1].ID())
+	// try remove a node
+	err = leader.RemovePeer(followers[2].ID(), 500*time.Millisecond)
+	// commit will not able to proceed
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "timeout draining error")
 }
 
 func TestRaft_RemoveLeader(t *testing.T) {
