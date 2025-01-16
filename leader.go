@@ -252,3 +252,13 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	l.startReplication()
 	l.l.Unlock()
 }
+
+func (l *Leader) stepdownOrShutdown() error {
+	if l.stepdown.IsClosed() {
+		return ErrNotLeader
+	}
+	if l.raft.shutdown.IsClosed() {
+		return ErrRaftShutdown
+	}
+	return nil
+}
