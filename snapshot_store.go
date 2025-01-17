@@ -201,7 +201,7 @@ func (s *SnapshotStore) OpenSnapshot(name string) (*SnapshotMeta, *bufferedReade
 		fh.Close()
 		return nil, nil, fmt.Errorf("CRC mismatch")
 	}
-	if _, err := fh.Seek(0, 0); err != nil {
+	if _, err := fh.Seek(0, io.SeekStart); err != nil {
 		s.logger.Error("state file seek failed", "error", err)
 		fh.Close()
 		return nil, nil, err
