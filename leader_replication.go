@@ -171,7 +171,7 @@ func (r *peerReplication) heartbeat() {
 // require caller holds lock
 func (l *Leader) startReplication() {
 	lastIdx := l.raft.instate.getLastIdx() // will negotiate to older value with follower
-	for _, addr := range l.raft.Peers() {
+	for _, addr := range l.raft.PeerAddresses() {
 		if addr == l.raft.ID() {
 			continue
 		}

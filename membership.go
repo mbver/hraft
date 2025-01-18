@@ -175,7 +175,7 @@ func (m *membership) getPeer(id string) PeerRole {
 	return RoleAbsent
 }
 
-func (m *membership) peers() []string {
+func (m *membership) peerAddresses() []string {
 	m.l.Lock()
 	defer m.l.Unlock()
 	mems := make([]string, 0, len(m.latestPeers)-1)
@@ -183,6 +183,12 @@ func (m *membership) peers() []string {
 		mems = append(mems, p.ID)
 	}
 	return mems
+}
+
+func (m *membership) getCommittedPeers() []*Peer {
+	m.l.Lock()
+	defer m.l.Unlock()
+	return copyPeers(m.committedPeers)
 }
 
 func (m *membership) rollbackToCommitted() {

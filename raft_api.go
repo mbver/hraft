@@ -13,8 +13,12 @@ func (r *Raft) Voters() []string {
 	return r.membership.getVoters()
 }
 
-func (r *Raft) Peers() []string {
-	return r.membership.peers()
+func (r *Raft) PeerAddresses() []string {
+	return r.membership.peerAddresses()
+}
+
+func (r *Raft) CommittedMembership() []*Peer {
+	return r.membership.getCommittedPeers()
 }
 
 func (r *Raft) ID() string {

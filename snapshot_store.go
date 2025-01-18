@@ -5,28 +5,50 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"hash/crc64"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
 
 const (
-	metafileName  = "meta.json"
-	tmpSuffix     = ".tmp"
-	stateFileName = "state.bin"
+	snapStoreDirName = "snapshots"
+	metafileName     = "meta.json"
+	tmpSuffix        = ".tmp"
+	stateFileName    = "state.bin"
 )
 
 type Snapshot struct {
 	dir       string
-	stateFile string
+	meta      *SnapshotMeta
+	stateFile *os.File
+	crcHash   hash.Hash64
 	buf       *bufio.Writer
 	logger    hclog.Logger
 	closed    bool
+}
+
+func (s *Snapshot) saveMeta() error {
+	path := filepath.Join(s.dir, metafileName)
+	fh, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	buf := bufio.NewWriter(fh)
+	enc := json.NewEncoder(buf)
+	if err = enc.Encode(&s.meta); err != nil {
+		return err
+	}
+	if err = fh.Sync(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type SnapshotMeta struct {
@@ -39,32 +61,52 @@ type SnapshotMeta struct {
 	CRC                    []byte
 }
 
-func NewSnapshot(
-	dir string,
-	logger hclog.Logger,
-	committedPeers []*Peer,
-	committedIdx uint64,
-) (*Snapshot, error) {
-	snap := &Snapshot{
-		dir:    dir,
-		logger: logger,
-	}
-	return snap, nil
-}
-
 type SnapshotStore struct {
 	dir       string
 	numRetain int
 	logger    hclog.Logger
 }
 
+func defaultSnapshotLogger() hclog.Logger {
+	return hclog.New(&hclog.LoggerOptions{
+		Name:   "snapshot",
+		Output: hclog.DefaultOutput,
+		Level:  hclog.DefaultLevel,
+	})
+}
+
+func canCreateFile(baseDir string) error {
+	path := filepath.Join(baseDir, "test")
+	fh, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err = fh.Close(); err != nil {
+		return err
+	}
+	if err = os.Remove(path); err != nil {
+		return err
+	}
+	return nil
+}
+
 func NewSnapshotStore(
-	dir string,
+	baseDir string,
 	numRetain int,
 	logger hclog.Logger,
 ) (*SnapshotStore, error) {
+	if numRetain < 1 {
+		return nil, fmt.Errorf("must retain at least 1 snapshot")
+	}
 	if logger == nil {
-		return nil, fmt.Errorf("logger is nil")
+		logger = defaultSnapshotLogger()
+	}
+	dir := filepath.Join(baseDir, snapStoreDirName)
+	if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+		return nil, fmt.Errorf("failed to create snapshot store dir %w", err)
+	}
+	if err := canCreateFile(dir); err != nil {
+		return nil, fmt.Errorf("unable to create file in snapshot store dir %s: %w", dir, err)
 	}
 	s := &SnapshotStore{
 		dir:       dir,
@@ -207,4 +249,51 @@ func (s *SnapshotStore) OpenSnapshot(name string) (*SnapshotMeta, *bufferedReade
 		return nil, nil, err
 	}
 	return meta, newBufferedReader(fh), nil
+}
+
+func toSnapshotName(term, idx uint64) string {
+	ms := time.Now().UnixNano() / int64(time.Millisecond)
+	return fmt.Sprintf("%d-%d-%d", term, idx, ms)
+}
+
+func (s *SnapshotStore) CreateSnapshot(
+	idx, term uint64,
+	peers []*Peer,
+	memsCommitIdx uint64,
+) (*Snapshot, error) {
+	name := toSnapshotName(term, idx)
+	dir := filepath.Join(s.dir, name)
+	s.logger.Info("creating new snapshot", "path", dir)
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		s.logger.Error("failed to create snapshot dir", "error", err)
+		return nil, err
+	}
+	snap := &Snapshot{
+		dir:    dir,
+		logger: s.logger,
+		meta: &SnapshotMeta{
+			Name:                   name,
+			Idx:                    idx,
+			Term:                   term,
+			Peers:                  peers,
+			MembershipCommittedIdx: memsCommitIdx,
+		},
+	}
+	if err := snap.saveMeta(); err != nil {
+		s.logger.Error("failed to write metadata", "error", err)
+		return nil, err
+	}
+	stateFile, err := os.Create(filepath.Join(dir, stateFileName))
+	if err != nil {
+		s.logger.Error("failed to create statefile", "error", err)
+		return nil, err
+	}
+	snap.stateFile = stateFile
+	snap.crcHash = crc64.New(crc64.MakeTable(crc64.ECMA))
+
+	w := io.MultiWriter(snap.stateFile, snap.crcHash)
+	snap.buf = bufio.NewWriter(w)
+
+	return snap, nil
 }
