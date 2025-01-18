@@ -52,7 +52,10 @@ func (s *Snapshot) saveMeta() error {
 	}
 	buf := bufio.NewWriter(fh)
 	enc := json.NewEncoder(buf)
-	if err = enc.Encode(&s.meta); err != nil {
+	if err = enc.Encode(s.meta); err != nil {
+		return err
+	}
+	if err = buf.Flush(); err != nil {
 		return err
 	}
 	if err = fh.Sync(); err != nil {
