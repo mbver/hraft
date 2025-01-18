@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -24,6 +25,17 @@ func TestSnapshotStore_CreateSnapshot_NonExistDir(t *testing.T) {
 	require.Nil(t, err)
 }
 
+func checkNumSnapshotsInStore(store *SnapshotStore, num int) error {
+	metas, err := store.List()
+	if err != nil {
+		return err
+	}
+	if len(metas) != num {
+		return fmt.Errorf("mismatch number of snaphshots, expect: %d, got: %d", num, len(metas))
+	}
+	return nil
+}
+
 func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 	baseDir, err := os.MkdirTemp("", "raft")
 	require.Nil(t, err)
@@ -31,10 +43,7 @@ func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 
 	store, err := NewSnapshotStore(baseDir, 3, nil)
 	require.Nil(t, err)
-
-	metas, err := store.List()
-	require.Nil(t, err)
-	require.Zero(t, len(metas))
+	require.Nil(t, checkNumSnapshotsInStore(store, 0))
 
 	peers := []*Peer{&Peer{
 		ID:   "127.0.0.1:4567",
@@ -42,10 +51,7 @@ func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 	}}
 	snap, err := store.CreateSnapshot(10, 3, peers, 2)
 	require.Nil(t, err)
-
-	metas, err = store.List()
-	require.Nil(t, err)
-	require.Zero(t, len(metas))
+	require.Nil(t, checkNumSnapshotsInStore(store, 0))
 
 	_, err = snap.Write([]byte("first\n"))
 	require.Nil(t, err)
@@ -54,11 +60,9 @@ func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 
 	err = snap.Close()
 	require.Nil(t, err)
+	require.Nil(t, checkNumSnapshotsInStore(store, 1))
 
-	metas, err = store.List()
-	require.Nil(t, err)
-	require.Equal(t, 1, len(metas))
-
+	metas, _ := store.List()
 	meta := metas[0]
 	require.Equal(t, uint64(10), meta.Idx)
 	require.Equal(t, uint64(3), meta.Term)
@@ -77,4 +81,22 @@ func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 	require.Nil(t, err)
 
 	require.True(t, bytes.Equal(buf.Bytes(), []byte("first\nsecond\n")))
+}
+
+func TestSnapshot_Discard(t *testing.T) {
+	baseDir, err := os.MkdirTemp("", "raft")
+	require.Nil(t, err)
+	defer os.RemoveAll(baseDir)
+
+	store, err := NewSnapshotStore(baseDir, 3, nil)
+	require.Nil(t, err)
+	require.Nil(t, checkNumSnapshotsInStore(store, 0))
+
+	snap, err := store.CreateSnapshot(10, 3, nil, 2)
+	require.Nil(t, err)
+	require.Nil(t, checkNumSnapshotsInStore(store, 0))
+
+	err = snap.Discard()
+	require.Nil(t, err)
+	require.Nil(t, checkNumSnapshotsInStore(store, 0))
 }
