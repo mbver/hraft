@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -99,4 +100,72 @@ func TestSnapshot_Discard(t *testing.T) {
 	err = snap.Discard()
 	require.Nil(t, err)
 	require.Nil(t, checkNumSnapshotsInStore(store, 0))
+}
+
+func TestSnapshotStore_Retain(t *testing.T) {
+	baseDir, err := os.MkdirTemp("", "raft")
+	require.Nil(t, err)
+	defer os.RemoveAll(baseDir)
+
+	store, err := NewSnapshotStore(baseDir, 2, nil)
+	require.Nil(t, err)
+	require.Nil(t, checkNumSnapshotsInStore(store, 0))
+
+	for i := 0; i < 5; i++ {
+		snap, err := store.CreateSnapshot(uint64(10+i), 3, []*Peer{}, 1)
+		require.Nil(t, err)
+		err = snap.Close()
+		require.Nil(t, err)
+		if i == 0 {
+			require.Nil(t, checkNumSnapshotsInStore(store, 1))
+			continue
+		}
+		require.Nil(t, checkNumSnapshotsInStore(store, 2))
+	}
+
+	metas, _ := store.List()
+	require.Equal(t, uint64(14), metas[0].Idx)
+	require.Equal(t, uint64(13), metas[1].Idx)
+}
+
+func TestSnapshotStore_BadPermission(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping file permission test on windows")
+	}
+
+	baseDir, err := os.MkdirTemp("", "raft")
+	require.Nil(t, err)
+	defer os.RemoveAll(baseDir)
+
+	err = os.Chmod(baseDir, 000)
+	require.Nil(t, err)
+	defer os.Chmod(baseDir, 0777)
+
+	_, err = NewSnapshotStore(baseDir, 2, nil)
+	require.NotNil(t, err)
+}
+
+func TestSnapshotStore_Ordering(t *testing.T) {
+	baseDir, err := os.MkdirTemp("", "raft")
+	require.Nil(t, err)
+	defer os.RemoveAll(baseDir)
+
+	store, err := NewSnapshotStore(baseDir, 2, nil)
+	require.Nil(t, err)
+
+	snap, err := store.CreateSnapshot(130350, 5, []*Peer{}, 1)
+	require.Nil(t, err)
+	err = snap.Close()
+	require.Nil(t, err)
+
+	snap, err = store.CreateSnapshot(230350, 36, []*Peer{}, 1)
+	require.Nil(t, err)
+	err = snap.Close()
+	require.Nil(t, err)
+
+	metas, err := store.List()
+	require.Nil(t, err)
+	require.Equal(t, 2, len(metas))
+	require.Equal(t, uint64(36), metas[0].Term)
+	require.Equal(t, uint64(5), metas[1].Term)
 }
