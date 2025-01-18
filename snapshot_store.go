@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -31,7 +32,16 @@ type Snapshot struct {
 	crcHash   hash.Hash64
 	buf       *bufio.Writer
 	logger    hclog.Logger
+	store     *SnapshotStore
 	closed    bool
+}
+
+func (s *Snapshot) Name() string {
+	return s.meta.Name
+}
+
+func (s *Snapshot) Write(p []byte) (int, error) {
+	return s.buf.Write(p)
 }
 
 func (s *Snapshot) saveMeta() error {
@@ -51,13 +61,79 @@ func (s *Snapshot) saveMeta() error {
 	return nil
 }
 
+func (s *Snapshot) sealState() error {
+	defer s.stateFile.Close() // close in any case
+	if err := s.buf.Flush(); err != nil {
+		return err
+	}
+	if err := s.stateFile.Sync(); err != nil {
+		return err
+	}
+	stat, err := s.stateFile.Stat()
+	if err != nil {
+		return err
+	}
+	s.meta.Size = stat.Size()
+	s.meta.CRC = s.crcHash.Sum(nil)
+
+	if err := s.stateFile.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Snapshot) Close() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+
+	var err error
+	if err = s.sealState(); err != nil {
+		s.logger.Error("failed to seal snapshot state", "error", err)
+		if err := os.RemoveAll(s.dir); err != nil {
+			return err
+		}
+		return err
+	}
+	if err = s.saveMeta(); err != nil {
+		s.logger.Error("failed to save snapshot meta", "error", err)
+		return err
+	}
+	path := strings.TrimSuffix(s.dir, tmpSuffix)
+	if err = os.Rename(s.dir, path); err != nil {
+		s.logger.Error("failed to move temporary snapshot into place", "error", err)
+		return err
+	}
+	if err = s.store.SyncDir(); err != nil {
+		return err
+	}
+	if err = s.store.Reap(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Snapshot) Discard() error {
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	if err := s.sealState(); err != nil {
+		s.logger.Error("failed to seal snapshot state", "error", err)
+		return err
+	}
+	return os.RemoveAll(s.dir)
+}
+
 type SnapshotMeta struct {
 	Name                   string
 	Term                   uint64
 	Idx                    uint64
 	Peers                  []*Peer
 	MembershipCommittedIdx uint64
-	Size                   uint64
+	Size                   int64
 	CRC                    []byte
 }
 
@@ -262,7 +338,7 @@ func (s *SnapshotStore) CreateSnapshot(
 	memsCommitIdx uint64,
 ) (*Snapshot, error) {
 	name := toSnapshotName(term, idx)
-	dir := filepath.Join(s.dir, name)
+	dir := filepath.Join(s.dir, name+tmpSuffix)
 	s.logger.Info("creating new snapshot", "path", dir)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -279,6 +355,7 @@ func (s *SnapshotStore) CreateSnapshot(
 			Peers:                  peers,
 			MembershipCommittedIdx: memsCommitIdx,
 		},
+		store: s,
 	}
 	if err := snap.saveMeta(); err != nil {
 		s.logger.Error("failed to write metadata", "error", err)
@@ -296,4 +373,22 @@ func (s *SnapshotStore) CreateSnapshot(
 	snap.buf = bufio.NewWriter(w)
 
 	return snap, nil
+}
+
+func (s *SnapshotStore) SyncDir() error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	fh, err := os.Open(s.dir)
+	if err != nil {
+		s.logger.Error("failed to open snapshot store dir", "path", s.dir, "error", err)
+		return err
+	}
+	defer fh.Close()
+
+	if err = fh.Sync(); err != nil {
+		s.logger.Error("failed syncing parent dir", "path", s.dir, "error", err)
+		return err
+	}
+	return nil
 }
