@@ -1,10 +1,12 @@
 package hraft
 
 import (
+	"sync"
 	"sync/atomic"
 )
 
-type IdxTerm struct {
+type idxTerm struct {
+	l    sync.Mutex
 	idx  uint64
 	term uint64
 }
@@ -14,14 +16,15 @@ type internalState struct {
 	term         uint64
 	commitIdx    uint64
 	lastApplied  uint64
-	lastLog      atomic.Value
-	lastSnapshot atomic.Value
+	lastLog      *idxTerm
+	lastSnapshot *idxTerm
 }
 
 func newInternalState() *internalState {
-	in := &internalState{}
-	in.setLastLog(0, 0)
-	in.setLastSnapshot(0, 0)
+	in := &internalState{
+		lastLog:      &idxTerm{},
+		lastSnapshot: &idxTerm{},
+	}
 	return in
 }
 
@@ -56,19 +59,25 @@ func (in *internalState) getLastIdx() uint64 {
 }
 
 func (in *internalState) getLastLog() (uint64, uint64) {
-	lastLog := in.lastLog.Load().(*IdxTerm)
-	return lastLog.idx, lastLog.term
+	in.lastLog.l.Lock()
+	defer in.lastLog.l.Unlock()
+	return in.lastLog.idx, in.lastLog.term
 }
 
 func (in *internalState) setLastLog(idx, term uint64) {
-	in.lastLog.Store(&IdxTerm{idx, term})
+	in.lastLog.l.Lock()
+	defer in.lastLog.l.Unlock()
+	in.lastLog.idx, in.lastLog.term = idx, term
 }
 
 func (in *internalState) getLastSnapshot() (uint64, uint64) {
-	lastSnapshot := in.lastSnapshot.Load().(*IdxTerm)
-	return lastSnapshot.idx, lastSnapshot.term
+	in.lastSnapshot.l.Lock()
+	defer in.lastSnapshot.l.Unlock()
+	return in.lastSnapshot.idx, in.lastSnapshot.term
 }
 
 func (in *internalState) setLastSnapshot(idx, term uint64) {
-	in.lastSnapshot.Store(&IdxTerm{idx, term})
+	in.lastSnapshot.l.Lock()
+	defer in.lastSnapshot.l.Unlock()
+	in.lastSnapshot.idx, in.lastSnapshot.term = idx, term
 }
