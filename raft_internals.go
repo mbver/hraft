@@ -201,6 +201,10 @@ func (r *Raft) getPrevLog(nextIdx uint64) (idx, term uint64, err error) {
 	if nextIdx == 1 {
 		return 0, 0, nil
 	}
+	lastSnapIdx, lastSnapTerm := r.instate.getLastSnapshot()
+	if nextIdx-1 == lastSnapIdx {
+		return lastSnapIdx, lastSnapTerm, nil
+	}
 	// skip snapshot stuffs for now
 	l := &Log{}
 	if err = r.logs.GetLog(nextIdx-1, l); err != nil {

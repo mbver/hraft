@@ -194,7 +194,7 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		updateMatchIdx:     l.commit.updateMatchIdx,
 		logAddedCh:         make(chan struct{}, 1),
 		currentTerm:        l.raft.getTerm(),
-		nextIdx:            lastIdx,
+		nextIdx:            lastIdx + 1,
 		stepdown:           l.stepdown,
 		stopCh:             make(chan struct{}),
 		backoff:            newBackoff(10*time.Millisecond, 41960*time.Millisecond),

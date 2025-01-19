@@ -58,8 +58,8 @@ func (r *Raft) takeSnapshot() (string, error) {
 	if err = snap.Close(); err != nil {
 		return "", fmt.Errorf("failed to close snapshot: %v", err)
 	}
-	// set latest snapshot
-	if err = r.compactLogs(0); err != nil {
+	r.instate.setLastSnapshot(req.idx, req.term)
+	if err = r.compactLogs(req.idx); err != nil {
 		return "", err
 	}
 	r.logger.Info("snapshot complete upto", "index", 0)
