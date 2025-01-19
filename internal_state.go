@@ -5,14 +5,16 @@ import (
 	"sync/atomic"
 )
 
+// TODO: replace lock with atomic for most of fields
 type internalState struct {
-	l               sync.Mutex
-	term            uint64
-	commitIdx       uint64
-	lastApplied     uint64
-	lastLogIdx      uint64
-	lastLogTerm     uint64
-	lastSnapshotIdx uint64
+	l                sync.Mutex
+	term             uint64
+	commitIdx        uint64
+	lastApplied      uint64
+	lastLogIdx       uint64
+	lastLogTerm      uint64
+	lastSnapshotIdx  uint64
+	lastSnapshotTerm uint64
 }
 
 func (in *internalState) getTerm() uint64 {
@@ -64,6 +66,12 @@ func (in *internalState) setLastLog(idx, term uint64) {
 	defer in.l.Unlock()
 	in.lastLogIdx = idx
 	in.lastLogTerm = term
+}
+
+func (in *internalState) getLastSnapshot() (uint64, uint64) {
+	in.l.Lock()
+	defer in.l.Unlock()
+	return in.lastSnapshotIdx, in.lastSnapshotTerm
 }
 
 func (in *internalState) setLastSnapshotIdx(idx uint64) {

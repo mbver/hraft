@@ -281,12 +281,12 @@ func logsToString(logs []*Log) string {
 	return buf.String()
 }
 
-type recordCommandsApplier struct {
+type recordCommandState struct {
 	l        sync.Mutex
 	commands []*Log
 }
 
-func (a *recordCommandsApplier) ApplyCommands(commits []*Commit) {
+func (a *recordCommandState) ApplyCommands(commits []*Commit) {
 	a.l.Lock()
 	defer a.l.Unlock()
 	for _, c := range commits {
@@ -295,8 +295,16 @@ func (a *recordCommandsApplier) ApplyCommands(commits []*Commit) {
 	}
 }
 
+func (a *recordCommandState) BatchSize() int {
+	return 1
+}
+
+func (a *recordCommandState) WriteToSnapshot(snap *Snapshot) error {
+	return nil
+}
+
 func getRecordCommandState(r *Raft) []*Log {
-	state := r.appstate.commandState.(*recordCommandsApplier)
+	state := r.appstate.commandState.(*recordCommandState)
 	state.l.Lock()
 	defer state.l.Unlock()
 	return copyLogs(state.commands)
@@ -378,7 +386,7 @@ func createTestNodeFromAddr(addr string) (*Raft, *BlockableConnGetter, error) {
 	connGetter := newBlockableConnGetter()
 	b.WithConnGetter(connGetter)
 
-	b.WithAppState(NewAppState(&recordCommandsApplier{}, &recordMembershipApplier{}, 1))
+	b.WithAppState(NewAppState(&recordCommandState{}, &recordMembershipApplier{}))
 
 	raft, err := b.Build()
 	if err != nil {

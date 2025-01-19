@@ -185,10 +185,10 @@ func (m *membership) peerAddresses() []string {
 	return mems
 }
 
-func (m *membership) getCommittedPeers() []*Peer {
+func (m *membership) getCommitted() ([]*Peer, uint64) {
 	m.l.Lock()
 	defer m.l.Unlock()
-	return copyPeers(m.committedPeers)
+	return copyPeers(m.committedPeers), m.committedIdx
 }
 
 func (m *membership) rollbackToCommitted() {

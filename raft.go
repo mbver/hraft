@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
@@ -68,6 +69,7 @@ type Raft struct {
 	stateMap           map[RaftStateType]State
 	logs               LogStore
 	kvs                KVStore
+	snapstore          *SnapshotStore
 	transport          *NetTransport
 	heartbeatCh        chan *RPC
 	rpchCh             chan *RPC
@@ -144,6 +146,25 @@ func (r *Raft) receiveTransitions() {
 			r.logger.Info("receive transition msg", "transition", transition.String())
 			r.getState().HandleTransition(transition)
 			close(transition.DoneCh)
+		case <-r.shutdownCh():
+			return
+		}
+	}
+}
+
+func (r *Raft) snapshotLoop() {
+	r.wg.Add(1)
+	defer r.wg.Done()
+	for {
+		select {
+		case <-jitterTimeoutCh(time.Duration(r.config.SnapshotInterval)):
+			if !r.shouldSnapshot() {
+				continue
+			}
+			if _, err := r.takeSnapshot(); err != nil {
+				r.logger.Error("failed to take snapshot", "error", err)
+			}
+		// skip user trigger snapshot for now
 		case <-r.shutdownCh():
 			return
 		}

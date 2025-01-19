@@ -17,10 +17,6 @@ func (r *Raft) PeerAddresses() []string {
 	return r.membership.peerAddresses()
 }
 
-func (r *Raft) CommittedMembership() []*Peer {
-	return r.membership.getCommittedPeers()
-}
-
 func (r *Raft) ID() string {
 	return r.membership.getLocalID()
 }

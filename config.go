@@ -9,6 +9,9 @@ type Config struct {
 	HeartbeatTimeout   time.Duration
 	CommitSyncInterval time.Duration
 	MaxAppendEntries   int
+	SnapshotThreshold  uint64
+	SnapshotInterval   time.Duration
+	NumTrailingLogs    uint64 // num of logs in logstore after snapshotting. for quick replay.
 }
 
 func validateConfig(c *Config) bool {

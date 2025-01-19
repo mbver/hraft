@@ -1,30 +1,49 @@
 package hraft
 
-import "sync/atomic"
+import (
+	"errors"
+	"sync/atomic"
+)
 
-type CommandsApplier interface {
+type CommandsState interface {
+	BatchSize() int
 	ApplyCommands([]*Commit)
+	WriteToSnapshot(*Snapshot) error
 }
 
 type MembershipApplier interface {
 	ApplyMembership(*Commit)
 }
 
+type AppSnapshotRequest struct {
+	term              uint64
+	idx               uint64
+	writeToSnapshotFn func(*Snapshot) error
+	errCh             chan error
+}
+
+func newAppSnapshotRequest() *AppSnapshotRequest {
+	return &AppSnapshotRequest{
+		errCh: make(chan error, 1),
+	}
+}
+
 type AppState struct {
 	mutateCh        chan []*Commit
-	batchSize       int
+	snapshotReqCh   chan *AppSnapshotRequest
 	lastAppliedIdx  uint64
 	lastAppliedTerm uint64
-	commandState    CommandsApplier
+	commandState    CommandsState
 	membershipState MembershipApplier
 	stop            *ProtectedChan
 	doneCh          chan struct{}
 }
 
-func NewAppState(command CommandsApplier, membership MembershipApplier, batchSize int) *AppState {
+var ErrEmptyCommandState = errors.New("command state is empty: no log is applied yet")
+
+func NewAppState(command CommandsState, membership MembershipApplier) *AppState {
 	return &AppState{
 		mutateCh:        make(chan []*Commit, 128),
-		batchSize:       batchSize,
 		commandState:    command,
 		membershipState: membership,
 		stop:            newProtectedChan(),
@@ -32,6 +51,7 @@ func NewAppState(command CommandsApplier, membership MembershipApplier, batchSiz
 	}
 }
 
+// TODO: doesn't need to be atomic?
 func (a *AppState) setLastApplied(idx, term uint64) {
 	atomic.StoreUint64(&a.lastAppliedIdx, idx)
 	atomic.StoreUint64(&a.lastAppliedTerm, term)
@@ -47,17 +67,18 @@ func (a *AppState) Stop() {
 }
 
 func (a *AppState) receiveMutations() {
+	batchSize := a.commandState.BatchSize()
 	for {
 		select {
 		case commits := <-a.mutateCh:
-			batch := make([]*Commit, 0, a.batchSize)
+			batch := make([]*Commit, 0, batchSize)
 			for _, c := range commits {
 				if c.Log.Type == LogCommand {
 					batch = append(batch, c)
-					if len(batch) == a.batchSize {
+					if len(batch) == batchSize {
 						a.commandState.ApplyCommands(batch)
 						a.setLastApplied(c.Log.Idx, c.Log.Term)
-						batch = make([]*Commit, 0, a.batchSize)
+						batch = make([]*Commit, 0, batchSize)
 					}
 				}
 				if c.Log.Type == LogMembership {
@@ -70,6 +91,15 @@ func (a *AppState) receiveMutations() {
 				last := batch[len(batch)-1]
 				a.setLastApplied(last.Log.Idx, last.Log.Term)
 			}
+		case snapReq := <-a.snapshotReqCh:
+			snapReq.idx, snapReq.term = a.getLastApplied()
+			if snapReq.idx == 0 {
+				snapReq.errCh <- ErrEmptyCommandState
+				return
+			}
+			snapReq.writeToSnapshotFn = a.commandState.WriteToSnapshot
+			snapReq.errCh <- nil
+
 		case <-a.stop.ch:
 			a.doneCh <- struct{}{}
 			return

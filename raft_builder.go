@@ -79,6 +79,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 	go raft.receiveHeartbeat()
 	go raft.receiveTransitions()
 	go raft.appstate.receiveMutations()
+	go raft.snapshotLoop()
 
 	return raft, nil
 }
