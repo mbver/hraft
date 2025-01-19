@@ -59,7 +59,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		logger:             b.logger,
 		appstate:           b.appState,
 		membership:         newMembership(b.config.LocalID),
-		instate:            &internalState{},
+		instate:            newInternalState(),
 		state:              followerStateType,
 		logs:               b.logStore,
 		kvs:                b.kvStore,
