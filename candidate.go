@@ -128,8 +128,7 @@ func (c *Candidate) runElection() {
 		case vote := <-voteCh:
 			if vote.Response.Term > c.getTerm() {
 				c.raft.logger.Debug("newer term discovered, fallback to follower")
-				waitCh := c.raft.dispatchTransition(followerStateType, vote.Response.Term)
-				<-waitCh
+				<-c.raft.dispatchTransition(followerStateType, vote.Response.Term)
 				return
 			}
 			resp := vote.Response
@@ -140,8 +139,7 @@ func (c *Candidate) runElection() {
 		case <-c.cancel.Ch():
 			return
 		case <-electionTimeoutCh: // election timeout, transition back to follower. run election again in next heartbeat timeout.
-			waitCh := c.raft.dispatchTransition(followerStateType, c.getTerm()-1)
-			<-waitCh
+			<-c.raft.dispatchTransition(followerStateType, c.getTerm()-1)
 			return
 		case <-c.raft.shutdownCh():
 			return
@@ -149,6 +147,5 @@ func (c *Candidate) runElection() {
 	}
 	// win election, become leader
 	c.raft.logger.Info("election won", "tally", voteGranted)
-	waitCh := c.raft.dispatchTransition(leaderStateType, c.getTerm())
-	<-waitCh
+	<-c.raft.dispatchTransition(leaderStateType, c.getTerm())
 }

@@ -113,8 +113,7 @@ func (r *peerReplication) replicate() {
 		}
 		if res.Term > r.currentTerm {
 			r.stepdown.Close() // stop all replication
-			waitCh := r.raft.dispatchTransition(followerStateType, res.Term)
-			<-waitCh
+			<-r.raft.dispatchTransition(followerStateType, res.Term)
 			return
 		}
 		if res.Success {
@@ -180,8 +179,7 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	}
 	if res.Term > req.Term {
 		r.stepdown.Close() // stop all replication
-		waitCh := r.raft.dispatchTransition(followerStateType, res.Term)
-		<-waitCh
+		<-r.raft.dispatchTransition(followerStateType, res.Term)
 		return nil
 	}
 	if res.Success {

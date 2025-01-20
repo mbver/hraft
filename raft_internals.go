@@ -42,8 +42,7 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 		return
 	}
 	if req.Term > r.getTerm() {
-		waitCh := r.dispatchTransition(followerStateType, req.Term)
-		<-waitCh
+		<-r.dispatchTransition(followerStateType, req.Term)
 		resp.Term = req.Term
 	}
 	if !r.checkPrevLog(req.PrevLogIdx, req.PrevLogTerm) {
@@ -316,8 +315,7 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 
 	// Increase the term if we see a newer one
 	if req.Term > r.getTerm() {
-		waitCh := r.dispatchTransition(followerStateType, req.Term)
-		<-waitCh
+		<-r.dispatchTransition(followerStateType, req.Term)
 		resp.Term = req.Term
 	}
 	if r.getStateType() != followerStateType { // don't grant vote if we are candidate/leader
@@ -394,8 +392,7 @@ func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
 		return
 	}
 	if req.Term > currentTerm {
-		waitCh := r.dispatchTransition(followerStateType, req.Term)
-		<-waitCh
+		<-r.dispatchTransition(followerStateType, req.Term)
 		resp.Term = req.Term
 	}
 

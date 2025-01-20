@@ -147,8 +147,7 @@ func (l *Leader) HandleCommitNotify() {
 	if _, latestIdx := l.raft.membership.getLatest(); latestIdx <= commitIdx {
 		l.raft.membership.setCommitted(l.raft.membership.getLatest())
 		if l.raft.membership.getPeer(l.raft.ID()) != RoleVoter {
-			waitCh := l.raft.dispatchTransition(followerStateType, l.getTerm())
-			<-waitCh
+			<-l.raft.dispatchTransition(followerStateType, l.getTerm())
 		}
 	}
 }
@@ -178,8 +177,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 			trySend(a.errCh, err)
 		}
 		// transition to follower
-		waitCh := l.raft.dispatchTransition(followerStateType, l.getTerm())
-		<-waitCh
+		<-l.raft.dispatchTransition(followerStateType, l.getTerm())
 		return
 	}
 	l.commit.updateMatchIdx(l.raft.ID(), lastIndex) // ======= lastIdx is increased by applies.

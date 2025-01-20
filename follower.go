@@ -36,8 +36,7 @@ func (f *Follower) HandleHeartbeatTimeout() {
 	f.raft.heartbeatTimeout.block()
 	term := f.raft.getTerm() + 1
 	f.raft.logger.Info("heartbeat timeout, transition to candidate")
-	waitCh := f.raft.dispatchTransition(candidateStateType, term)
-	<-waitCh
+	<-f.raft.dispatchTransition(candidateStateType, term)
 }
 
 func (f *Follower) HandleApply(a *Apply) {
