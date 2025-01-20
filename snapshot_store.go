@@ -26,13 +26,13 @@ const (
 )
 
 type SnapshotMeta struct {
-	Name                   string
-	Term                   uint64
-	Idx                    uint64
-	Peers                  []*Peer
-	MembershipCommittedIdx uint64
-	Size                   int64
-	CRC                    []byte
+	Name       string
+	Term       uint64
+	Idx        uint64
+	Peers      []*Peer
+	MCommitIdx uint64
+	Size       int64
+	CRC        []byte
 }
 
 type Snapshot struct {
@@ -352,11 +352,11 @@ func (s *SnapshotStore) CreateSnapshot(
 		dir:    dir,
 		logger: s.logger,
 		meta: &SnapshotMeta{
-			Name:                   name,
-			Idx:                    idx,
-			Term:                   term,
-			Peers:                  peers,
-			MembershipCommittedIdx: memsCommitIdx,
+			Name:       name,
+			Idx:        idx,
+			Term:       term,
+			Peers:      peers,
+			MCommitIdx: memsCommitIdx,
 		},
 		store: s,
 	}

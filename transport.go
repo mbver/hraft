@@ -72,9 +72,13 @@ type InstallSnapshotRequest struct {
 	LastLogIdx  uint64
 	LastLogTerm uint64
 	Size        int64
+	Peers       []*Peer
+	MCommitIdx  uint64
 }
 
 type InstallSnapshotResponse struct {
+	Term    uint64
+	Success bool
 }
 
 type RpcResponse struct {

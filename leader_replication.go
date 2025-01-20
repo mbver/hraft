@@ -1,6 +1,7 @@
 package hraft
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 )
@@ -90,9 +91,13 @@ func (r *peerReplication) replicate() {
 			return
 		}
 		entries, err := r.raft.getEntries(nextIdx, uptoIdx)
+		if err == ErrLogNotFound {
+			err = r.sendLatestSnapshot()
+		}
 		if err != nil {
 			return
 		}
+
 		req := &AppendEntriesRequest{
 			Term:            r.currentTerm,
 			Leader:          []byte(r.raft.ID()),
@@ -127,8 +132,8 @@ func (r *peerReplication) replicate() {
 		nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
 		r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
 		r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
-		// if failure is NOT because of log
-		// inconsistencies, further delay backoff.
+		// if failure is NOT because of inconsistencies
+		// further delay backoff.
 		if !res.PrevLogCheckFailed {
 			r.backoff.next()
 		}
@@ -140,6 +145,55 @@ func (r *peerReplication) replicate() {
 		tryNotify(r.logSyncCh)
 		r.onStage = false
 	}
+}
+
+func (r *peerReplication) sendLatestSnapshot() error {
+	metas, err := r.raft.snapstore.List()
+	if err != nil {
+		r.raft.logger.Error("failed to list snapshots", "error", err)
+		return err
+	}
+	if len(metas) == 0 {
+		r.raft.logger.Error("no snapshot in store")
+		return fmt.Errorf("no snapshots found")
+	}
+	meta, snapshot, err := r.raft.snapstore.OpenSnapshot(metas[0].Name)
+	if err != nil {
+		r.raft.logger.Error("failed to open snapshot", "name", metas[0].Name, "error", err)
+		return err
+	}
+	defer snapshot.Close()
+
+	req := &InstallSnapshotRequest{
+		Term:        r.currentTerm,
+		LastLogIdx:  meta.Idx,
+		LastLogTerm: meta.Term,
+		Size:        meta.Size,
+		Peers:       meta.Peers,
+		MCommitIdx:  meta.MCommitIdx,
+	}
+	res := &InstallSnapshotResponse{}
+	if err := r.raft.transport.InstallSnapshot(r.addr, req, res, snapshot); err != nil {
+		r.raft.logger.Error("failed to install snapshot", "name", meta.Name, "error", err)
+		r.backoff.next()
+		return err
+	}
+	if res.Term > req.Term {
+		r.stepdown.Close() // stop all replication
+		waitCh := r.raft.dispatchTransition(followerStateType, res.Term)
+		<-waitCh
+		return nil
+	}
+	if res.Success {
+		r.setNextIdx(meta.Idx + 1)
+		r.updateMatchIdx(r.addr, meta.Idx)
+		r.backoff.reset()
+		// NOTIFY?
+		return nil
+	}
+	r.backoff.next()
+	r.raft.logger.Warn("installSnapshot rejected", "peer", r.addr)
+	return nil
 }
 
 func (r *peerReplication) heartbeat() {
