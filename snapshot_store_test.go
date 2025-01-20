@@ -68,7 +68,7 @@ func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 	require.Equal(t, uint64(10), meta.Idx)
 	require.Equal(t, uint64(3), meta.Term)
 	require.True(t, reflect.DeepEqual(peers, meta.Peers))
-	require.Equal(t, uint64(2), meta.MembershipCommittedIdx)
+	require.Equal(t, uint64(2), meta.MCommitIdx)
 	require.Equal(t, int64(13), meta.Size)
 
 	_, bufFile, err := store.OpenSnapshot(meta.Name)

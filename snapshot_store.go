@@ -118,14 +118,11 @@ func (s *Snapshot) Close() error {
 		s.logger.Error("failed to move temporary snapshot into place", "error", err)
 		return err
 	}
+	s.dir = path
 	if err = s.store.SyncDir(); err != nil {
 		return err
 	}
-	if err = s.store.Reap(); err != nil {
-		return err
-	}
-
-	return nil
+	return s.store.Reap()
 }
 
 func (s *Snapshot) Discard() error {

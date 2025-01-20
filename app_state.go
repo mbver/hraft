@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"errors"
+	"io"
 	"sync/atomic"
 )
 
@@ -9,6 +10,7 @@ type CommandsState interface {
 	BatchSize() int
 	ApplyCommands([]*Commit)
 	WriteToSnapshot(*Snapshot) error
+	Restore(io.ReadCloser) error
 }
 
 type MembershipApplier interface {
@@ -28,9 +30,26 @@ func newAppSnapshotRequest() *AppSnapshotRequest {
 	}
 }
 
+type AppStateRestoreReq struct {
+	term   uint64
+	idx    uint64
+	source io.ReadCloser
+	errCh  chan error
+}
+
+func newAppStateRestoreReq(term, idx uint64, source io.ReadCloser) *AppStateRestoreReq {
+	return &AppStateRestoreReq{
+		term:   term,
+		idx:    idx,
+		source: source,
+		errCh:  make(chan error, 1),
+	}
+}
+
 type AppState struct {
 	mutateCh        chan []*Commit
 	snapshotReqCh   chan *AppSnapshotRequest
+	restoreReqCh    chan *AppStateRestoreReq
 	lastAppliedIdx  uint64
 	lastAppliedTerm uint64
 	commandState    CommandsState
@@ -44,6 +63,8 @@ var ErrEmptyCommandState = errors.New("command state is empty: no log is applied
 func NewAppState(command CommandsState, membership MembershipApplier) *AppState {
 	return &AppState{
 		mutateCh:        make(chan []*Commit, 128),
+		snapshotReqCh:   make(chan *AppSnapshotRequest),
+		restoreReqCh:    make(chan *AppStateRestoreReq),
 		commandState:    command,
 		membershipState: membership,
 		stop:            newProtectedChan(),
@@ -91,15 +112,19 @@ func (a *AppState) receiveMutations() {
 				last := batch[len(batch)-1]
 				a.setLastApplied(last.Log.Idx, last.Log.Term)
 			}
-		case snapReq := <-a.snapshotReqCh:
-			snapReq.idx, snapReq.term = a.getLastApplied()
-			if snapReq.idx == 0 {
-				snapReq.errCh <- ErrEmptyCommandState
+		case req := <-a.snapshotReqCh:
+			req.idx, req.term = a.getLastApplied()
+			if req.idx == 0 {
+				req.errCh <- ErrEmptyCommandState
 				return
 			}
-			snapReq.writeToSnapshotFn = a.commandState.WriteToSnapshot
-			snapReq.errCh <- nil
-
+			req.writeToSnapshotFn = a.commandState.WriteToSnapshot
+			req.errCh <- nil
+		case req := <-a.restoreReqCh:
+			defer req.source.Close()
+			err := a.commandState.Restore(req.source)
+			req.errCh <- err
+			a.setLastApplied(req.idx, req.term)
 		case <-a.stop.ch:
 			a.doneCh <- struct{}{}
 			return

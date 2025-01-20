@@ -3,6 +3,7 @@ package hraft
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -300,6 +301,10 @@ func (a *recordCommandState) BatchSize() int {
 }
 
 func (a *recordCommandState) WriteToSnapshot(snap *Snapshot) error {
+	return nil
+}
+
+func (a *recordCommandState) Restore(source io.ReadCloser) error {
 	return nil
 }
 

@@ -68,7 +68,6 @@ type VoteResponse struct {
 }
 type InstallSnapshotRequest struct {
 	Term        uint64
-	Leader      []byte
 	LastLogIdx  uint64
 	LastLogTerm uint64
 	Size        int64

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"sync/atomic"
 	"time"
 )
@@ -20,6 +21,8 @@ func (r *Raft) handleRPC(rpc *RPC) {
 		r.handleAppendEntries(rpc, req)
 	case *VoteRequest:
 		r.handleRequestVote(rpc, req)
+	case *InstallSnapshotRequest:
+		r.handleInstallSnapshot(rpc, req)
 	default:
 
 	}
@@ -372,6 +375,71 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 
 	resp.Granted = true
 	r.heartbeatTimeout.reset()
+}
+
+func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
+	currentTerm := r.getTerm()
+	resp := &InstallSnapshotResponse{
+		Term:    currentTerm,
+		Success: false,
+	}
+	defer func() {
+		io.Copy(io.Discard, rpc.reader)
+		rpc.respCh <- resp
+	}()
+	if req.Term < currentTerm {
+		r.logger.Info("ignoring installSnapshot request with older term",
+			"req-term", req.Term,
+			"current-term", currentTerm)
+		return
+	}
+	if req.Term > currentTerm {
+		waitCh := r.dispatchTransition(followerStateType, req.Term)
+		<-waitCh
+		resp.Term = req.Term
+	}
+
+	snapshot, err := r.snapstore.CreateSnapshot(req.LastLogIdx, req.LastLogTerm, req.Peers, req.MCommitIdx)
+	if err != nil {
+		r.logger.Error("failed to create snapshot to install", "error", err)
+		return
+	}
+	n, err := io.Copy(snapshot, rpc.reader)
+	if err != nil {
+		snapshot.Discard()
+		r.logger.Error("failed to copy snapshot", "error", err)
+		return
+	}
+	if n != req.Size {
+		snapshot.Discard()
+		r.logger.Error("failed to receive whole snapshot",
+			"received", fmt.Sprintf("%d/%d", n, req.Size))
+		return
+	}
+	if err := snapshot.Close(); err != nil {
+		r.logger.Error("failed to finalize snapshot", "error", err)
+		return
+	}
+	r.logger.Info("copied to local snapshot", "bytes", n)
+
+	meta, source, err := r.snapstore.OpenSnapshot(snapshot.Name())
+	if err != nil {
+		r.logger.Info("failed to open snaphot", "name", meta.Name)
+		return
+	}
+	restoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
+	if err = <-restoreReq.errCh; err != nil {
+		r.logger.Error("failed to restore snapshot", "error", err)
+		return
+	}
+	r.instate.setLastApplied(meta.Idx)
+	r.instate.setLastSnapshot(meta.Idx, meta.Term)
+
+	if err := r.compactLogs(req.LastLogIdx); err != nil {
+		r.logger.Error("failed to compact logs", "error", err)
+	}
+	r.logger.Info("Installed remote snapshot")
+	resp.Success = true
 }
 
 func (r *Raft) hasExistingState() (bool, error) {
