@@ -13,6 +13,7 @@ import (
 )
 
 func TestSnapshotStore_CreateSnapshot_NonExistDir(t *testing.T) {
+	t.Parallel()
 	baseDir, err := os.MkdirTemp("", "raft")
 	require.Nil(t, err)
 	defer os.RemoveAll(baseDir)
@@ -38,6 +39,7 @@ func checkNumSnapshotsInStore(store *SnapshotStore, num int) error {
 }
 
 func TestSnapshotStore_CreateSnapshot(t *testing.T) {
+	t.Parallel()
 	baseDir, err := os.MkdirTemp("", "raft")
 	require.Nil(t, err)
 	defer os.RemoveAll(baseDir)
@@ -85,6 +87,7 @@ func TestSnapshotStore_CreateSnapshot(t *testing.T) {
 }
 
 func TestSnapshot_Discard(t *testing.T) {
+	t.Parallel()
 	baseDir, err := os.MkdirTemp("", "raft")
 	require.Nil(t, err)
 	defer os.RemoveAll(baseDir)
@@ -103,6 +106,7 @@ func TestSnapshot_Discard(t *testing.T) {
 }
 
 func TestSnapshotStore_Retain(t *testing.T) {
+	t.Parallel()
 	baseDir, err := os.MkdirTemp("", "raft")
 	require.Nil(t, err)
 	defer os.RemoveAll(baseDir)
@@ -129,6 +133,7 @@ func TestSnapshotStore_Retain(t *testing.T) {
 }
 
 func TestSnapshotStore_BadPermission(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping file permission test on windows")
 	}
@@ -146,6 +151,7 @@ func TestSnapshotStore_BadPermission(t *testing.T) {
 }
 
 func TestSnapshotStore_Ordering(t *testing.T) {
+	t.Parallel()
 	baseDir, err := os.MkdirTemp("", "raft")
 	require.Nil(t, err)
 	defer os.RemoveAll(baseDir)
