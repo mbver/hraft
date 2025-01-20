@@ -11,7 +11,7 @@ type idxTerm struct {
 	term uint64
 }
 
-// TODO: replace lock with atomic for most of fields
+// TODO: put lastLog and lastSnapshot in one struct?
 type internalState struct {
 	term         uint64
 	commitIdx    uint64

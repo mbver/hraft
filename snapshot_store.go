@@ -25,6 +25,16 @@ const (
 	stateFileName    = "state.bin"
 )
 
+type SnapshotMeta struct {
+	Name                   string
+	Term                   uint64
+	Idx                    uint64
+	Peers                  []*Peer
+	MembershipCommittedIdx uint64
+	Size                   int64
+	CRC                    []byte
+}
+
 type Snapshot struct {
 	dir       string
 	meta      *SnapshotMeta
@@ -128,16 +138,6 @@ func (s *Snapshot) Discard() error {
 		return err
 	}
 	return os.RemoveAll(s.dir)
-}
-
-type SnapshotMeta struct {
-	Name                   string
-	Term                   uint64
-	Idx                    uint64
-	Peers                  []*Peer
-	MembershipCommittedIdx uint64
-	Size                   int64
-	CRC                    []byte
 }
 
 type SnapshotStore struct {

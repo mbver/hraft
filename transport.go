@@ -74,6 +74,9 @@ type InstallSnapshotRequest struct {
 	Size        int64
 }
 
+type InstallSnapshotResponse struct {
+}
+
 type RpcResponse struct {
 	Response interface{}
 	Error    error
@@ -217,6 +220,40 @@ func (t *NetTransport) unaryRPC(addr string, mType msgType, req interface{}, res
 	}
 	t.returnConn(conn)
 	return nil
+}
+
+func (t *NetTransport) InstallSnapshot(addr string, req *InstallSnapshotRequest, res *InstallSnapshotResponse, data io.Reader) error {
+	return t.streamRPC(addr, requestVoteMsgType, req, req.Size, res, data)
+}
+
+func (t *NetTransport) streamRPC(addr string, mType msgType, req interface{}, size int64, res interface{}, data io.Reader) error {
+	conn, err := t.connGetter.GetConn(addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if t.config.Timeout > 0 {
+		timeout := t.config.Timeout
+		scaled := timeout * time.Duration(size/int64(t.config.TimeoutScale))
+		if scaled > timeout {
+			timeout = scaled
+		}
+		conn.conn.SetDeadline(time.Now().Add(timeout))
+	}
+	if err = conn.sendMsg(mType, req); err != nil {
+		conn.Close()
+		return err
+	}
+
+	if _, err = io.Copy(conn.w, data); err != nil {
+		return err
+	}
+
+	if err = conn.w.Flush(); err != nil {
+		return err
+	}
+
+	return conn.readResp(res)
 }
 
 func (t *NetTransport) HeartbeatCh() chan *RPC {
