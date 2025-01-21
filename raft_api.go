@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -31,10 +32,10 @@ type Apply struct {
 	dispatchedAt time.Time
 }
 
-func newApply(cmd []byte) *Apply {
+func newApply(logType LogType, cmd []byte) *Apply {
 	return &Apply{
 		log: &Log{
-			Type: LogCommand,
+			Type: logType,
 			Data: cmd,
 		},
 		errCh: make(chan error, 1),
@@ -42,7 +43,7 @@ func newApply(cmd []byte) *Apply {
 }
 
 func (r *Raft) Apply(cmd []byte, timeout time.Duration) error {
-	a := newApply(cmd)
+	a := newApply(LogCommand, cmd)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.applyCh, a, timeoutCh, r.shutdownCh()); err != nil {
 		return err
@@ -92,6 +93,7 @@ func (r *Raft) Bootstrap(timeout time.Duration) error { // TODO: timeout is in c
 	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
 }
 
+// TODO: Only verify if replication succeeds?
 func (r *Raft) VerifyLeader(timeout time.Duration) bool {
 	timeoutCh := getTimeoutCh(timeout)
 	select {
@@ -100,4 +102,34 @@ func (r *Raft) VerifyLeader(timeout time.Duration) bool {
 	case <-timeoutCh:
 		return false
 	}
+}
+
+type userRestoreRequest struct {
+	meta   *SnapshotMeta
+	source io.Reader
+	errCh  chan error
+}
+
+func newUserRestoreRequest(meta *SnapshotMeta, source io.Reader) *userRestoreRequest {
+	return &userRestoreRequest{
+		meta:   meta,
+		source: source,
+		errCh:  make(chan error, 1),
+	}
+}
+
+func (r *Raft) Restore(meta *SnapshotMeta, source io.Reader, timeout time.Duration) error {
+	req := newUserRestoreRequest(meta, source)
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.restoreReqCh, req, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	if err := drainErr(req.errCh, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	noOp := newApply(LogNoOp, nil)
+	if err := sendToRaft(r.applyCh, noOp, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(req.errCh, timeoutCh, r.shutdownCh())
 }

@@ -52,10 +52,12 @@ func (in *internalState) setLastApplied(idx uint64) {
 	atomic.StoreUint64(&in.lastApplied, idx)
 }
 
+// when snapshot is installed on a follower,
+// lastSnapIdx exceeds lastLogIdx
 func (in *internalState) getLastIdx() uint64 {
 	lastLogIdx, _ := in.getLastLog()
 	lastSnapIdx, _ := in.getLastSnapshot()
-	return max(lastLogIdx, lastSnapIdx) // ??? can snapshotIdx exceeds lastLogIdx?
+	return max(lastLogIdx, lastSnapIdx)
 }
 
 func (in *internalState) getLastLog() (uint64, uint64) {

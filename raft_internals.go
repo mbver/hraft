@@ -424,8 +424,14 @@ func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
 		r.logger.Info("failed to open snaphot", "name", meta.Name)
 		return
 	}
-	restoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
-	if err = <-restoreReq.errCh; err != nil {
+	appRestoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
+	select {
+	case r.appstate.restoreReqCh <- appRestoreReq:
+	case <-r.shutdownCh():
+		r.logger.Error("raft-shutdown: abort install snapshot")
+		return
+	}
+	if err = <-appRestoreReq.errCh; err != nil {
 		r.logger.Error("failed to restore snapshot", "error", err)
 		return
 	}
@@ -457,7 +463,7 @@ func (r *Raft) hasExistingState() (bool, error) {
 	return false, nil
 }
 
-func sendToRaft[T *Apply | *membershipChange](ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{}) error {
+func sendToRaft[T *Apply | *membershipChange | *userRestoreRequest](ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{}) error {
 	select {
 	case ch <- msg:
 		return nil

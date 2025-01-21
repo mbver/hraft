@@ -129,6 +129,7 @@ func (l *Leader) HandleCommitNotify() {
 		}
 		// no-op log is skipped
 		if a.log.Type == LogNoOp {
+			a.errCh <- nil
 			continue
 		}
 		batch = append(batch, &Commit{a.log, a.errCh})

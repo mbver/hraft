@@ -77,6 +77,7 @@ type Raft struct {
 	commitNotifyCh     chan struct{}
 	membershipChangeCh chan *membershipChange
 	transitionCh       chan *Transition
+	restoreReqCh       chan *userRestoreRequest
 	heartbeatTimeout   *heartbeatTimeout
 	wg                 *ProtectedWaitGroup
 	shutdown           *ProtectedChan
