@@ -1,6 +1,7 @@
 package hraft
 
 import (
+	"container/list"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -119,8 +120,9 @@ func (l *Leader) HandleCommitNotify() {
 	batch := make([]*Commit, 0, batchSize)
 	// handle logs after stepping up
 	l.inflight.l.Lock()
-	e := first
-	for e != nil {
+	var next *list.Element
+	for e := first; e != nil; e = next {
+		next = e.Next()
 		a := e.Value.(*Apply)
 		if a.log.Idx > commitIdx {
 			break
@@ -134,9 +136,7 @@ func (l *Leader) HandleCommitNotify() {
 			l.raft.applyCommits(batch)
 			batch = make([]*Commit, 0, batchSize)
 		}
-		next := e.Next()
 		l.inflight.list.Remove(e)
-		e = next
 	}
 
 	l.inflight.l.Unlock()
