@@ -70,6 +70,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		commitNotifyCh:     make(chan struct{}, 1),
 		membershipChangeCh: make(chan *membershipChange),
 		transitionCh:       make(chan *Transition),
+		snapshotReqCh:      make(chan *userSnapshotRequest),
 		restoreReqCh:       make(chan *userRestoreRequest),
 		heartbeatTimeout:   newHeartbeatTimeout(b.config.HeartbeatTimeout),
 		wg:                 &ProtectedWaitGroup{},
@@ -80,7 +81,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 	go raft.receiveHeartbeat()
 	go raft.receiveTransitions()
 	go raft.appstate.receiveMutations()
-	go raft.snapshotLoop()
+	go raft.receiveSnapshotRequests()
 
 	return raft, nil
 }

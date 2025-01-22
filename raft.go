@@ -3,6 +3,7 @@ package hraft
 import (
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -78,6 +79,7 @@ type Raft struct {
 	commitNotifyCh     chan struct{}
 	membershipChangeCh chan *membershipChange
 	transitionCh       chan *Transition
+	snapshotReqCh      chan *userSnapshotRequest
 	restoreReqCh       chan *userRestoreRequest
 	heartbeatTimeout   *heartbeatTimeout
 	wg                 *ProtectedWaitGroup
@@ -156,11 +158,19 @@ func (r *Raft) receiveTransitions() {
 	}
 }
 
-func (r *Raft) snapshotLoop() {
+func (r *Raft) receiveSnapshotRequests() {
 	r.wg.Add(1)
 	defer r.wg.Done()
 	for {
 		select {
+		case req := <-r.snapshotReqCh:
+			name, err := r.takeSnapshot()
+			if err == nil {
+				req.openSnapshot = func() (*SnapshotMeta, io.ReadCloser, error) {
+					return r.snapstore.OpenSnapshot(name)
+				}
+			}
+			req.errCh <- err
 		case <-jitterTimeoutCh(time.Duration(r.config.SnapshotInterval)):
 			if !r.shouldSnapshot() {
 				continue

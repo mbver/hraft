@@ -104,6 +104,27 @@ func (r *Raft) VerifyLeader(timeout time.Duration) bool {
 	}
 }
 
+type userSnapshotRequest struct {
+	openSnapshot func() (*SnapshotMeta, io.ReadCloser, error)
+	errCh        chan error
+}
+
+func newUserSnapshotRequest() *userSnapshotRequest {
+	return &userSnapshotRequest{
+		errCh: make(chan error, 1),
+	}
+}
+
+func (r *Raft) Snapshot(timeout time.Duration) (func() (*SnapshotMeta, io.ReadCloser, error), error) {
+	req := newUserSnapshotRequest()
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.snapshotReqCh, req, timeoutCh, r.shutdownCh()); err != nil {
+		return nil, err
+	}
+	err := drainErr(req.errCh, timeoutCh, r.shutdownCh())
+	return req.openSnapshot, err
+}
+
 type userRestoreRequest struct {
 	meta   *SnapshotMeta
 	source io.ReadCloser

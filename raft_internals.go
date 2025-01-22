@@ -463,7 +463,12 @@ func (r *Raft) hasExistingState() (bool, error) {
 	return false, nil
 }
 
-func sendToRaft[T *Apply | *membershipChange | *userRestoreRequest](ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{}) error {
+func sendToRaft[T *Apply |
+	*membershipChange |
+	*userSnapshotRequest |
+	*userRestoreRequest](
+	ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{},
+) error {
 	select {
 	case ch <- msg:
 		return nil
