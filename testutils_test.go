@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -219,6 +221,8 @@ func (c *cluster) close() {
 		go func() {
 			defer c.wg.Done()
 			raft.Shutdown()
+			baseDir := filepath.Dir(raft.snapstore.dir)
+			os.RemoveAll(baseDir)
 		}()
 	}
 	c.wg.Wait()
@@ -377,6 +381,20 @@ func (b *BlockableConnGetter) unblock(addr string) {
 	b.l.Unlock()
 }
 
+func testSnapStoreFromAddr(addr string) (*SnapshotStore, error) {
+	// num retains? loggers? baseDir??
+	baseDir, err := os.MkdirTemp("", "snapstore_")
+	if err != nil {
+		return nil, err
+	}
+	logger := hclog.New(&hclog.LoggerOptions{
+		Name:   fmt.Sprintf("snapstore: %s:", addr),
+		Output: hclog.DefaultOutput,
+		Level:  hclog.DefaultLevel,
+	})
+	return NewSnapshotStore(baseDir, 3, logger)
+}
+
 func createTestNodeFromAddr(addr string) (*Raft, *BlockableConnGetter, error) {
 	b := &RaftBuilder{}
 
@@ -385,6 +403,12 @@ func createTestNodeFromAddr(addr string) (*Raft, *BlockableConnGetter, error) {
 
 	b.WithLogStore(newInMemLogStore())
 	b.WithKVStore(newInMemKVStore())
+
+	snapstore, err := testSnapStoreFromAddr(addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	b.WithSnapStore(snapstore)
 
 	b.WithLogger(newTestLogger(addr))
 	b.WithTransportConfig(testTransportConfigFromAddr(addr))

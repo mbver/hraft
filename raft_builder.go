@@ -13,6 +13,7 @@ type RaftBuilder struct {
 	appState        *AppState
 	logStore        LogStore
 	kvStore         KVStore
+	snapStore       *SnapshotStore
 	logger          hclog.Logger
 }
 
@@ -40,6 +41,10 @@ func (b *RaftBuilder) WithKVStore(kv KVStore) {
 	b.kvStore = kv
 }
 
+func (b *RaftBuilder) WithSnapStore(s *SnapshotStore) {
+	b.snapStore = s
+}
+
 func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 	b.logger = logger
 }
@@ -63,6 +68,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		state:              followerStateType,
 		logs:               b.logStore,
 		kvs:                b.kvStore,
+		snapstore:          b.snapStore,
 		transport:          trans,
 		heartbeatCh:        trans.HeartbeatCh(),
 		rpchCh:             trans.RpcCh(),
