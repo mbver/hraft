@@ -2,6 +2,9 @@ package hraft
 
 import (
 	"container/list"
+	"errors"
+	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -259,5 +262,81 @@ func (l *Leader) stepdownOrShutdown() error {
 	if l.raft.shutdown.IsClosed() {
 		return ErrRaftShutdown
 	}
+	return nil
+}
+
+var ErrAbortedByRestore = errors.New("abort inflight by restore")
+
+func (l *Leader) HandleRestoreRequest(req *userRestoreRequest) {
+	err := l.restoreSnapshot(req.meta, req.source)
+	req.errCh <- err
+}
+
+func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error {
+	defer source.Close()
+	if !l.raft.membership.isStable() {
+		return ErrMembershipUnstable
+	}
+
+	// cancel all inflight logs
+	l.inflight.l.Lock()
+	var next *list.Element
+	for e := l.inflight.Front(); e != nil; e = next {
+		next = e.Next()
+		e.Value.(*Apply).errCh <- ErrAbortedByRestore
+		l.inflight.list.Remove(e)
+	}
+	l.inflight.l.Unlock()
+
+	term := l.raft.getTerm()
+	lastIdx := l.raft.instate.getLastIdx()
+	if meta.Idx > lastIdx {
+		lastIdx = meta.Idx
+	}
+	// make sure we have a hole in log idx
+	// to avoid reapplying old logs
+	// and name collision with source snapshot
+	lastIdx++
+	peers, mLatestIdx := l.raft.membership.getLatest()
+	snapshot, err := l.raft.snapstore.CreateSnapshot(lastIdx, term, peers, mLatestIdx)
+	if err != nil {
+		return fmt.Errorf("failed to create snapshot %w", err)
+	}
+	n, err := io.Copy(snapshot, source)
+	if err != nil {
+		snapshot.Discard()
+		return fmt.Errorf("failed to write snapshot %w", err)
+	}
+	if n != meta.Size {
+		snapshot.Discard()
+		return fmt.Errorf("failed to write snapshot, size mismatch: %d != %d", n, meta.Size)
+	}
+	if err := snapshot.Close(); err != nil {
+		return fmt.Errorf("failed to finalize snapshot %w", err)
+	}
+	l.raft.logger.Info("copied to local snapshot", "bytes", n)
+
+	if err = source.Close(); err != nil {
+		return fmt.Errorf("failed to close source %w", err)
+	}
+
+	meta, source, err = l.raft.snapstore.OpenSnapshot(snapshot.Name())
+	if err != nil {
+		return fmt.Errorf("failed to reopen snapshot %s: %w", snapshot.Name(), err)
+	}
+	appRestoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
+	select {
+	case l.raft.appstate.restoreReqCh <- appRestoreReq:
+	case <-l.raft.shutdownCh():
+		return ErrRaftShutdown
+	}
+	if err = <-appRestoreReq.errCh; err != nil {
+		return fmt.Errorf("failed to restore snapshot %w", err)
+	}
+	// all outstanding logs will not be applied
+	// even replication succeeds and commit notified
+	l.raft.instate.setLastLog(lastIdx, term)
+	l.raft.instate.setLastApplied(lastIdx)
+	l.raft.instate.setLastSnapshot(lastIdx, term)
 	return nil
 }

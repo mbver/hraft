@@ -48,3 +48,7 @@ func (f *Follower) HandleCommitNotify() {}
 func (f *Follower) HandleMembershipChange(change *membershipChange) {
 	trySend(change.errCh, ErrNotLeader)
 }
+
+func (f *Follower) HandleRestoreRequest(req *userRestoreRequest) {
+	trySend(req.errCh, ErrNotLeader)
+}

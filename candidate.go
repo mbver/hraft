@@ -69,6 +69,10 @@ func (c *Candidate) HandleMembershipChange(change *membershipChange) {
 	trySend(change.errCh, ErrNotLeader)
 }
 
+func (c *Candidate) HandleRestoreRequest(req *userRestoreRequest) {
+	trySend(req.errCh, ErrNotLeader)
+}
+
 type voteResult struct {
 	VoterId  string
 	Response *VoteResponse

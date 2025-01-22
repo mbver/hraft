@@ -106,11 +106,11 @@ func (r *Raft) VerifyLeader(timeout time.Duration) bool {
 
 type userRestoreRequest struct {
 	meta   *SnapshotMeta
-	source io.Reader
+	source io.ReadCloser
 	errCh  chan error
 }
 
-func newUserRestoreRequest(meta *SnapshotMeta, source io.Reader) *userRestoreRequest {
+func newUserRestoreRequest(meta *SnapshotMeta, source io.ReadCloser) *userRestoreRequest {
 	return &userRestoreRequest{
 		meta:   meta,
 		source: source,
@@ -118,7 +118,7 @@ func newUserRestoreRequest(meta *SnapshotMeta, source io.Reader) *userRestoreReq
 	}
 }
 
-func (r *Raft) Restore(meta *SnapshotMeta, source io.Reader, timeout time.Duration) error {
+func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Duration) error {
 	req := newUserRestoreRequest(meta, source)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.restoreReqCh, req, timeoutCh, r.shutdownCh()); err != nil {

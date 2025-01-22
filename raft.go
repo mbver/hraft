@@ -57,6 +57,7 @@ type State interface {
 	HandleApply(*Apply)
 	HandleCommitNotify()
 	HandleMembershipChange(*membershipChange)
+	HandleRestoreRequest(*userRestoreRequest)
 }
 
 type Raft struct {
@@ -108,6 +109,8 @@ func (r *Raft) receiveMsgs() {
 			r.getState().HandleCommitNotify()
 		case change := <-r.membershipChangeCh:
 			r.getState().HandleMembershipChange(change)
+		case req := <-r.restoreReqCh:
+			r.getState().HandleRestoreRequest(req)
 		case <-r.heartbeatTimeout.getCh():
 			if !r.membership.isActive() || !r.membership.isLocalVoter() {
 				r.heartbeatTimeout.reset()
