@@ -1,7 +1,6 @@
 package hraft
 
 import (
-	"errors"
 	"io"
 	"sync/atomic"
 )
@@ -58,8 +57,6 @@ type AppState struct {
 	doneCh          chan struct{}
 }
 
-var ErrEmptyCommandState = errors.New("command state is empty: no log is applied yet")
-
 func NewAppState(command CommandsState, membership MembershipApplier) *AppState {
 	return &AppState{
 		mutateCh:        make(chan []*Commit, 128),
@@ -114,10 +111,6 @@ func (a *AppState) receiveMutations() {
 			}
 		case req := <-a.snapshotReqCh:
 			req.idx, req.term = a.getLastApplied()
-			if req.idx == 0 {
-				req.errCh <- ErrEmptyCommandState
-				return
-			}
 			req.writeToSnapshotFn = a.commandState.WriteToSnapshot
 			req.errCh <- nil
 		case req := <-a.restoreReqCh:

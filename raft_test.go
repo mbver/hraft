@@ -3,6 +3,7 @@ package hraft
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"reflect"
 	"testing"
 	"time"
@@ -421,4 +422,56 @@ func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
 	sleep()
 	success := leader.VerifyLeader(500 * time.Millisecond)
 	require.True(t, success)
+}
+
+func TestRaft_UserSnapshot(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(1)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	openSnapshot, err := leader.Snapshot(0)
+	require.Nil(t, err)
+	require.NotNil(t, openSnapshot)
+	metas, err := leader.snapstore.List()
+	require.Nil(t, err)
+	require.Equal(t, 1, len(metas))
+
+	meta, snapshot, err := openSnapshot()
+	require.Nil(t, err)
+	defer snapshot.Close()
+	require.Zero(t, meta.Size)
+
+	buf := bytes.Buffer{}
+	n, err := io.Copy(&buf, snapshot)
+	require.Nil(t, err)
+	require.Zero(t, n)
+	err = snapshot.Close()
+	require.Nil(t, err)
+
+	for i := 0; i < 10; i++ {
+		err = leader.Apply([]byte(fmt.Sprintf("test_%d", i)), 0)
+		require.Nil(t, err)
+	}
+
+	openSnapshot, err = leader.Snapshot(0)
+	require.Nil(t, err)
+	require.NotNil(t, openSnapshot)
+	metas, err = leader.snapstore.List()
+	require.Nil(t, err)
+	require.Equal(t, 2, len(metas))
+
+	meta, snapshot, err = openSnapshot()
+	require.Nil(t, err)
+	defer snapshot.Close()
+
+	buf = bytes.Buffer{}
+	n, err = io.Copy(&buf, snapshot)
+	require.Nil(t, err)
+	require.NotZero(t, n)
+	require.Equal(t, meta.Size, n)
 }

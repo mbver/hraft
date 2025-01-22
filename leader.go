@@ -316,14 +316,12 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	}
 	l.raft.logger.Info("copied to local snapshot", "bytes", n)
 
-	if err = source.Close(); err != nil {
-		return fmt.Errorf("failed to close source %w", err)
-	}
-
 	meta, source, err = l.raft.snapstore.OpenSnapshot(snapshot.Name())
 	if err != nil {
 		return fmt.Errorf("failed to reopen snapshot %s: %w", snapshot.Name(), err)
 	}
+	defer source.Close()
+
 	appRestoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
 	select {
 	case l.raft.appstate.restoreReqCh <- appRestoreReq:

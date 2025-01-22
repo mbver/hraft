@@ -305,7 +305,18 @@ func (a *recordCommandState) BatchSize() int {
 }
 
 func (a *recordCommandState) WriteToSnapshot(snap *Snapshot) error {
-	return nil
+	if len(a.commands) == 0 {
+		return nil
+	}
+	data, err := encode(a.commands)
+	if err != nil {
+		return err
+	}
+	n, err := snap.Write(data)
+	if n != len(data) {
+		return fmt.Errorf("missing state data writing to snapshot: %d/%d, error: %w", n, len(data), err)
+	}
+	return err
 }
 
 func (a *recordCommandState) Restore(source io.ReadCloser) error {
