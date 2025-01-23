@@ -17,7 +17,7 @@ func sleep() {
 
 func TestRaft_NoBootstrap_StartStop(t *testing.T) {
 	t.Parallel()
-	raft, cleanup, err := createTestNode()
+	raft, cleanup, err := createTestNode(nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -25,7 +25,7 @@ func TestRaft_NoBootstrap_StartStop(t *testing.T) {
 }
 
 func TestRaft_AfterShutdown(t *testing.T) {
-	c, cleanup, err := createTestCluster(1)
+	c, cleanup, err := createTestCluster(1, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	c.close()
@@ -40,7 +40,7 @@ func TestRaft_AfterShutdown(t *testing.T) {
 
 func TestRaft_ApplyNonLeader(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -52,7 +52,7 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 
 func TestRaft_Apply_Timeout(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -66,7 +66,7 @@ func TestRaft_Apply_Timeout(t *testing.T) {
 
 func TestRaft_ApplyConcurrent(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -101,7 +101,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 
 func TestCluster_StartStop(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -110,7 +110,7 @@ func TestCluster_StartStop(t *testing.T) {
 }
 func TestCluster_SingleNode(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(1)
+	c, cleanup, err := createTestCluster(1, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -127,7 +127,7 @@ func TestCluster_SingleNode(t *testing.T) {
 
 func TestRaft_RemoveFollower(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -156,7 +156,7 @@ func TestRaft_RemoveFollower(t *testing.T) {
 
 func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -212,7 +212,7 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 
 func TestRaft_RemoveFollower_SplitCluster(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(4)
+	c, cleanup, err := createTestCluster(4, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -231,7 +231,7 @@ func TestRaft_RemoveFollower_SplitCluster(t *testing.T) {
 
 func TestRaft_RemoveLeader(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -273,7 +273,7 @@ func TestRaft_RemoveLeader(t *testing.T) {
 
 func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -327,7 +327,7 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 
 func TestRaft_AddKnownPeer(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -342,7 +342,7 @@ func TestRaft_AddKnownPeer(t *testing.T) {
 
 func TestRaft_RemoveUnknownPeer(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -357,7 +357,7 @@ func TestRaft_RemoveUnknownPeer(t *testing.T) {
 
 func TestRaft_VerifyLeader(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -369,7 +369,7 @@ func TestRaft_VerifyLeader(t *testing.T) {
 
 func TestRaft_VerifyLeader_Single(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(1)
+	c, cleanup, err := createTestCluster(1, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -381,7 +381,7 @@ func TestRaft_VerifyLeader_Single(t *testing.T) {
 
 func TestRaft_VerifyLeader_Fail(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(2)
+	c, cleanup, err := createTestCluster(2, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -407,7 +407,7 @@ func TestRaft_VerifyLeader_Fail(t *testing.T) {
 
 func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(3)
+	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
@@ -426,7 +426,7 @@ func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
 
 func TestRaft_UserSnapshot(t *testing.T) {
 	t.Parallel()
-	c, cleanup, err := createTestCluster(1)
+	c, cleanup, err := createTestCluster(1, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	sleep()
