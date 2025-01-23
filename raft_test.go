@@ -475,3 +475,27 @@ func TestRaft_UserSnapshot(t *testing.T) {
 	require.NotZero(t, n)
 	require.Equal(t, meta.Size, n)
 }
+
+func TestRaft_AutoSnapshot(t *testing.T) {
+	t.Parallel()
+	conf := defaultTestConfig()
+	conf.SnapshotInterval = 2 * conf.CommitSyncInterval
+	conf.SnapshotThreshold = 50
+	conf.NumTrailingLogs = 10
+	c, cleanup, err := createTestCluster(1, conf)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	for i := 0; i < 100; i++ {
+		err = leader.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
+		require.Nil(t, err)
+	}
+	sleep()
+	metas, err := leader.snapstore.List()
+	require.Nil(t, err)
+	require.NotZero(t, len(metas))
+}

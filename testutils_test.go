@@ -121,9 +121,8 @@ func getTestAppendEntriesRequestResponse(leader string) (*AppendEntriesRequest, 
 	return req, resp
 }
 
-func defaultTestConfig(addr string) *Config {
+func defaultTestConfig() *Config {
 	return &Config{
-		LocalID:            addr,
 		ElectionTimeout:    100 * time.Millisecond,
 		HeartbeatTimeout:   100 * time.Millisecond,
 		CommitSyncInterval: 20 * time.Millisecond,
@@ -410,8 +409,9 @@ func createTestNodeFromAddr(addr string, conf *Config) (*Raft, *BlockableConnGet
 	b := &RaftBuilder{}
 
 	if conf == nil {
-		conf = defaultTestConfig(addr)
+		conf = defaultTestConfig()
 	}
+	conf.LocalID = addr
 	b.WithConfig(conf)
 
 	b.WithLogStore(newInMemLogStore())
