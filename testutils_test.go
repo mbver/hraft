@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-msgpack/codec"
 	"github.com/mbver/mlist/testaddr"
 )
 
@@ -127,6 +128,9 @@ func defaultTestConfig() *Config {
 		HeartbeatTimeout:   100 * time.Millisecond,
 		CommitSyncInterval: 20 * time.Millisecond,
 		MaxAppendEntries:   64,
+		SnapshotThreshold:  8192,
+		SnapshotInterval:   120 * time.Second,
+		NumTrailingLogs:    10240,
 	}
 }
 
@@ -319,7 +323,10 @@ func (a *recordCommandState) WriteToSnapshot(snap *Snapshot) error {
 }
 
 func (a *recordCommandState) Restore(source io.ReadCloser) error {
-	return nil
+	defer source.Close()
+	dec := codec.NewDecoder(source, &codec.MsgpackHandle{})
+	a.commands = nil
+	return dec.Decode(&a.commands)
 }
 
 func getRecordCommandState(r *Raft) []*Log {

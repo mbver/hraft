@@ -226,7 +226,7 @@ func (t *NetTransport) unaryRPC(addr string, mType msgType, req interface{}, res
 }
 
 func (t *NetTransport) InstallSnapshot(addr string, req *InstallSnapshotRequest, res *InstallSnapshotResponse, data io.Reader) error {
-	return t.streamRPC(addr, requestVoteMsgType, req, req.Size, res, data)
+	return t.streamRPC(addr, installSnapshotMsgType, req, req.Size, res, data)
 }
 
 func (t *NetTransport) streamRPC(addr string, mType msgType, req interface{}, size int64, res interface{}, data io.Reader) error {

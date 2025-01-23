@@ -152,5 +152,5 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 	if err := sendToRaft(r.applyCh, noOp, timeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
-	return drainErr(req.errCh, timeoutCh, r.shutdownCh())
+	return drainErr(noOp.errCh, timeoutCh, r.shutdownCh())
 }

@@ -499,3 +499,64 @@ func TestRaft_AutoSnapshot(t *testing.T) {
 	require.Nil(t, err)
 	require.NotZero(t, len(metas))
 }
+
+func fetchErr(errCh chan error, n int, timeout time.Duration) error {
+	timeoutCh := time.After(timeout)
+	for i := 0; i < n; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				return err
+			}
+		case <-timeoutCh:
+			return fmt.Errorf("timeout")
+		}
+	}
+	return nil
+}
+
+func TestRaft_UserRestore(t *testing.T) {
+	t.Parallel()
+	conf := defaultTestConfig()
+	conf.HeartbeatTimeout = 500 * time.Millisecond
+	conf.ElectionTimeout = 500 * time.Millisecond
+
+	c, cleanup, err := createTestCluster(3, conf)
+	defer cleanup()
+	require.Nil(t, err)
+	sleep()
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	errCh := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			err = leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
+			errCh <- err
+		}()
+	}
+	sleep()
+
+	err = fetchErr(errCh, 10, 5*time.Second)
+	require.Nil(t, err)
+
+	openSnapshot, err := leader.Snapshot(0)
+	require.Nil(t, err)
+
+	errCh = make(chan error, 10)
+	for i := 10; i < 20; i++ {
+		go func() {
+			err = leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
+			errCh <- err
+		}()
+	}
+	err = fetchErr(errCh, 10, 5*time.Second)
+	require.Nil(t, err)
+
+	meta, source, err := openSnapshot()
+	require.Nil(t, err)
+	defer source.Close()
+	meta.Idx += 30
+	err = leader.Restore(meta, source, 5*time.Second)
+	require.Nil(t, err)
+}

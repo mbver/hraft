@@ -159,7 +159,7 @@ func (l *Leader) HandleCommitNotify() {
 func (l *Leader) dispatchApplies(applies []*Apply) {
 	now := time.Now()
 	term := l.getTerm()
-	lastIndex := l.raft.instate.getLastIdx() // ???
+	lastIndex, _ := l.raft.instate.getLastIdxTerm()
 
 	n := len(applies)
 	logs := make([]*Log, n)
@@ -277,19 +277,17 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	if !l.raft.membership.isStable() {
 		return ErrMembershipUnstable
 	}
-
 	// cancel all inflight logs
 	l.inflight.l.Lock()
 	var next *list.Element
-	for e := l.inflight.Front(); e != nil; e = next {
+	for e := l.inflight.list.Front(); e != nil; e = next {
 		next = e.Next()
 		e.Value.(*Apply).errCh <- ErrAbortedByRestore
 		l.inflight.list.Remove(e)
 	}
 	l.inflight.l.Unlock()
-
 	term := l.raft.getTerm()
-	lastIdx := l.raft.instate.getLastIdx()
+	lastIdx, _ := l.raft.instate.getLastIdxTerm()
 	if meta.Idx > lastIdx {
 		lastIdx = meta.Idx
 	}

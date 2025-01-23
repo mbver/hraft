@@ -54,10 +54,13 @@ func (in *internalState) setLastApplied(idx uint64) {
 
 // when snapshot is installed on a follower,
 // lastSnapIdx exceeds lastLogIdx
-func (in *internalState) getLastIdx() uint64 {
-	lastLogIdx, _ := in.getLastLog()
-	lastSnapIdx, _ := in.getLastSnapshot()
-	return max(lastLogIdx, lastSnapIdx)
+func (in *internalState) getLastIdxTerm() (uint64, uint64) {
+	lastLogIdx, logTerm := in.getLastLog()
+	lastSnapIdx, snapTerm := in.getLastSnapshot()
+	if lastLogIdx > lastSnapIdx {
+		return lastLogIdx, logTerm
+	}
+	return lastSnapIdx, snapTerm
 }
 
 func (in *internalState) getLastLog() (uint64, uint64) {

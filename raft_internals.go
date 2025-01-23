@@ -29,9 +29,10 @@ func (r *Raft) handleRPC(rpc *RPC) {
 }
 
 func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
+	lastIdx, _ := r.instate.getLastIdxTerm()
 	resp := &AppendEntriesResponse{
 		Term:               r.getTerm(),
-		LastLogIdx:         r.instate.getLastIdx(),
+		LastLogIdx:         lastIdx,
 		Success:            false,
 		PrevLogCheckFailed: false,
 	}
@@ -61,7 +62,7 @@ func (r *Raft) checkPrevLog(idx, term uint64) bool {
 	if idx == 0 {
 		return true
 	}
-	lastIdx, lastTerm := r.getLastLog()
+	lastIdx, lastTerm := r.instate.getLastIdxTerm()
 	if lastIdx == idx {
 		return term == lastTerm
 	}
@@ -146,7 +147,8 @@ func (r *Raft) updateLeaderCommit(idx uint64) {
 	if idx == 0 || idx <= r.instate.getCommitIdx() {
 		return
 	}
-	idx = min(idx, r.instate.getLastIdx())
+	lastIdx, _ := r.instate.getLastIdxTerm()
+	idx = min(idx, lastIdx)
 	r.instate.setCommitIdx(idx)
 	if _, latestIdx := r.membership.getLatest(); latestIdx <= idx {
 		r.membership.setCommitted(r.membership.getLatest())
@@ -207,7 +209,6 @@ func (r *Raft) getPrevLog(nextIdx uint64) (idx, term uint64, err error) {
 	if nextIdx-1 == lastSnapIdx {
 		return lastSnapIdx, lastSnapTerm, nil
 	}
-	// skip snapshot stuffs for now
 	l := &Log{}
 	if err = r.logs.GetLog(nextIdx-1, l); err != nil {
 		return 0, 0, err

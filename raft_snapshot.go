@@ -59,6 +59,6 @@ func (r *Raft) takeSnapshot() (string, error) {
 	if err = r.compactLogs(req.idx); err != nil {
 		return "", err
 	}
-	r.logger.Info("snapshot complete upto", "index", 0)
+	r.logger.Info("snapshot complete upto", "index", req.idx)
 	return snap.Name(), nil
 }

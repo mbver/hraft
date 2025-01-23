@@ -91,13 +91,18 @@ func (r *peerReplication) replicate() {
 			return
 		}
 		entries, err := r.raft.getEntries(nextIdx, uptoIdx)
-		if err == ErrLogNotFound {
-			err = r.sendLatestSnapshot()
-		}
-		if err != nil {
+		if err != nil && err != ErrLogNotFound {
+			r.raft.logger.Error("failed to get entries", "from", nextIdx, "to", uptoIdx, "error", err)
 			return
 		}
-
+		if err == ErrLogNotFound {
+			err = r.sendLatestSnapshot()
+			if err != nil {
+				r.raft.logger.Error("failed to install latest snapshot")
+				return
+			}
+			continue
+		}
 		req := &AppendEntriesRequest{
 			Term:            r.currentTerm,
 			Leader:          []byte(r.raft.ID()),
@@ -128,8 +133,8 @@ func (r *peerReplication) replicate() {
 			}
 			continue
 		}
-		nextIdx = min(nextIdx-1, res.LastLogIdx+1) // ====== seems unnecessary?
-		r.setNextIdx(max(nextIdx, 1))              // ===== seems unnecssary?
+		nextIdx = min(nextIdx-1, res.LastLogIdx+1)
+		r.setNextIdx(max(nextIdx, 1))
 		r.raft.logger.Warn("appendEntries rejected, sending older logs", "peer", r.addr, "next", r.getNextIdx())
 		// if failure is NOT because of inconsistencies
 		// further delay backoff.
@@ -222,7 +227,7 @@ func (r *peerReplication) heartbeat() {
 
 // require caller holds lock
 func (l *Leader) startReplication() {
-	lastIdx := l.raft.instate.getLastIdx() // will negotiate to older value with follower
+	lastIdx, _ := l.raft.instate.getLastIdxTerm() // will negotiate to older value with follower
 	for _, addr := range l.raft.PeerAddresses() {
 		if addr == l.raft.ID() {
 			continue
