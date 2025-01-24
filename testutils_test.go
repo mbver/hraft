@@ -487,6 +487,10 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 			return nil, cleanup, fmt.Errorf("%s", msg)
 		}
 	}
+	sleep()
+	if err := checkClusterState(cluster); err != nil {
+		return nil, cleanup, err
+	}
 	return cluster, cleanup, nil
 }
 
@@ -536,4 +540,14 @@ func applyAndCheck(leader *Raft, n int, offset int, wantErr error) error {
 		}()
 	}
 	return drainAndCheckErr(collectErrCh, wantErr, n, 5*time.Second)
+}
+
+func checkClusterState(c *cluster) error {
+	if n := len(c.getNodesByState(leaderStateType)); n != 1 {
+		return fmt.Errorf("expect 1 leader but got %d", n)
+	}
+	if n := len(c.getNodesByState(followerStateType)); n != len(c.rafts)-1 {
+		return fmt.Errorf("expect %d followers but got %d", len(c.rafts)-1, n)
+	}
+	return nil
 }
