@@ -31,7 +31,7 @@ func TestRaft_AfterShutdown(t *testing.T) {
 	c.close()
 
 	raft := c.rafts[0]
-	err = raft.Apply(nil, 0)
+	err = <-raft.Apply(nil, 0)
 	require.Equal(t, ErrRaftShutdown, err)
 
 	err = raft.AddVoter("127.0.0.1:7946", 0)
@@ -46,7 +46,7 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 	sleep()
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 	raft := c.getNodesByState(followerStateType)[0]
-	err = raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
+	err = <-raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
 	require.Equal(t, ErrNotLeader, err)
 }
 
@@ -59,8 +59,8 @@ func TestRaft_Apply_Timeout(t *testing.T) {
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
 
-	err = raft.Apply([]byte("test"), time.Microsecond)
-	require.NotNil(t, err)
+	err = <-raft.Apply([]byte("test"), time.Microsecond)
+	require.NotNil(t, err, fmt.Sprintf("%v", err))
 	require.Contains(t, err.Error(), "timeout")
 }
 
@@ -77,7 +77,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 	errCh := make(chan error, numApplies)
 	for i := 0; i < numApplies; i++ {
 		go func(i int) {
-			err := raft.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
+			err := <-raft.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
 			errCh <- err
 		}(i)
 	}
@@ -117,7 +117,7 @@ func TestCluster_SingleNode(t *testing.T) {
 	require.Equal(t, 0, len(c.getNodesByState(followerStateType)))
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	raft := c.getNodesByState(leaderStateType)[0]
-	err = raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
+	err = <-raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
 	require.Nil(t, err)
 	commands := getRecordCommandState(raft)
 	require.Equal(t, 1, len(commands))
@@ -281,19 +281,33 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 
+	collectNilErrCh := make(chan error, 10)
+	collectNonLeaderErrCh := make(chan error, 10)
 	for i := 0; i < 100; i++ {
 		if i == 80 {
 			err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
 			require.Nil(t, err, "failed to remove leader")
 			continue
 		}
-		err = leader.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
+		errCh := leader.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
 		if i < 80 {
-			require.Nil(t, err)
+			go func() {
+				err := <-errCh
+				collectNilErrCh <- err
+			}()
 			continue
 		}
-		require.Equal(t, ErrNotLeader, err)
+		go func() {
+			err := <-errCh
+			collectNonLeaderErrCh <- err
+		}()
+
 	}
+	err = drainAndCheckErr(collectNilErrCh, nil, 80, 5*time.Second)
+	require.Nil(t, err)
+
+	err = drainAndCheckErr(collectNonLeaderErrCh, ErrNotLeader, 19, 5*time.Second)
+	require.Nil(t, err)
 
 	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, followerStateType, leader.getStateType(), fmt.Sprintf("wrong state type: %s", leader.getStateType()))
@@ -453,10 +467,17 @@ func TestRaft_UserSnapshot(t *testing.T) {
 	err = snapshot.Close()
 	require.Nil(t, err)
 
+	collectErrCh := make(chan error, 10)
 	for i := 0; i < 10; i++ {
-		err = leader.Apply([]byte(fmt.Sprintf("test_%d", i)), 0)
-		require.Nil(t, err)
+		errCh := leader.Apply([]byte(fmt.Sprintf("test_%d", i)), 0)
+		go func() {
+			err := <-errCh
+			collectErrCh <- err
+		}()
 	}
+
+	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
+	require.Nil(t, err)
 
 	openSnapshot, err = leader.Snapshot(0)
 	require.Nil(t, err)
@@ -490,22 +511,30 @@ func TestRaft_AutoSnapshot(t *testing.T) {
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 
+	collectErrCh := make(chan error, 10)
 	for i := 0; i < 100; i++ {
-		err = leader.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
-		require.Nil(t, err)
+		errCh := leader.Apply([]byte(fmt.Sprintf("test_%d", i)), 0)
+		go func() {
+			err := <-errCh
+			collectErrCh <- err
+		}()
 	}
+
+	err = drainAndCheckErr(collectErrCh, nil, 100, 5*time.Second)
+	require.Nil(t, err)
+
 	sleep()
 	metas, err := leader.snapstore.List()
 	require.Nil(t, err)
 	require.NotZero(t, len(metas))
 }
 
-func fetchErr(errCh chan error, n int, timeout time.Duration) error {
+func drainAndCheckErr(errCh chan error, wantErr error, n int, timeout time.Duration) error {
 	timeoutCh := time.After(timeout)
 	for i := 0; i < n; i++ {
 		select {
 		case err := <-errCh:
-			if err != nil {
+			if err != wantErr {
 				return err
 			}
 		case <-timeoutCh:
@@ -528,36 +557,67 @@ func TestRaft_UserRestore(t *testing.T) {
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 
-	errCh := make(chan error, 10)
+	collectErrCh := make(chan error, 10)
 	for i := 0; i < 10; i++ {
+		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
 		go func() {
-			err := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
-			errCh <- err
+			err := <-errCh
+			collectErrCh <- err
 		}()
 	}
 	sleep()
-
-	err = fetchErr(errCh, 10, 5*time.Second)
+	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
 	require.Nil(t, err)
 
 	openSnapshot, err := leader.Snapshot(0)
 	require.Nil(t, err)
 
-	errCh = make(chan error, 10)
+	collectErrCh = make(chan error, 10)
 	for i := 10; i < 20; i++ {
+		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
 		go func() {
-			err := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
-			errCh <- err
+			err := <-errCh
+			collectErrCh <- err
 		}()
 	}
-	err = fetchErr(errCh, 10, 5*time.Second)
+	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
 	require.Nil(t, err)
 
 	meta, source, err := openSnapshot()
 	require.Nil(t, err)
 	defer source.Close()
+	oldLastIdx, _ := leader.instate.getLastIdxTerm()
 	meta.Idx += 30
 	err = leader.Restore(meta, source, 5*time.Second)
+	require.Nil(t, err)
+
+	sleep()
+	require.True(t, c.isConsistent())
+
+	// 1 idx is to create an index hole
+	// 1 idx is from NoOp log
+	expectedLastIdx := max(meta.Idx, oldLastIdx) + 2
+	newLastIdx, _ := leader.instate.getLastIdxTerm()
+	require.Equal(t, expectedLastIdx, newLastIdx)
+
+	firstState := getRecordCommandState(leader)
+	// state before snapshot is preserved.
+	// state after snapshot is discarded.
+	require.Equal(t, 10, len(firstState))
+	for i, l := range firstState {
+		expected := []byte(fmt.Sprintf("test %d", i))
+		require.True(t, bytes.Equal(expected, l.Data), fmt.Sprintf("expect: %s, got: %s", expected, l.Data))
+	}
+
+	collectErrCh = make(chan error, 10)
+	for i := 20; i < 30; i++ {
+		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
+		go func() {
+			err := <-errCh
+			collectErrCh <- err
+		}()
+	}
+	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
 	require.Nil(t, err)
 
 	sleep()

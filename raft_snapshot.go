@@ -19,6 +19,9 @@ func (r *Raft) compactLogs(snapIdx uint64) error {
 	}
 	lastIdx, _ := r.getLastLog()
 	numTrailing := r.config.NumTrailingLogs
+	if firstIdx+numTrailing > lastIdx { // don't use minus for uint64!
+		return nil
+	}
 	// only truncate snapshotted logs
 	truncatedIdx := min(snapIdx, lastIdx-numTrailing)
 	if truncatedIdx <= firstIdx {

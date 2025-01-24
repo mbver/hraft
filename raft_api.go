@@ -42,13 +42,13 @@ func newApply(logType LogType, cmd []byte) *Apply {
 	}
 }
 
-func (r *Raft) Apply(cmd []byte, timeout time.Duration) error {
+func (r *Raft) Apply(cmd []byte, timeout time.Duration) chan error {
 	a := newApply(LogCommand, cmd)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.applyCh, a, timeoutCh, r.shutdownCh()); err != nil {
-		return err
+		a.errCh <- err
 	}
-	return drainErr(a.errCh, timeoutCh, r.shutdownCh())
+	return a.errCh
 }
 
 func (r *Raft) AddVoter(addr string, timeout time.Duration) error {

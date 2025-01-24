@@ -470,6 +470,16 @@ func sendToRaft[T *Apply |
 	*userRestoreRequest](
 	ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{},
 ) error {
+	// prioritize shutdownCh and timeoutCh
+	// because applyCh is buffered
+	select {
+	case <-shutdownCh:
+		return ErrRaftShutdown
+	case <-timeoutCh:
+		return fmt.Errorf("timeout sending to raft")
+	default:
+	}
+
 	select {
 	case ch <- msg:
 		return nil

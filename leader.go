@@ -130,6 +130,9 @@ func (l *Leader) HandleCommitNotify() {
 		if a.log.Idx > commitIdx {
 			break
 		}
+		// remove it early, else no-op item
+		// will block when error sent to it 3rd time.
+		l.inflight.list.Remove(e)
 		// no-op log is skipped
 		if a.log.Type == LogNoOp {
 			a.errCh <- nil
@@ -140,9 +143,7 @@ func (l *Leader) HandleCommitNotify() {
 			l.raft.applyCommits(batch)
 			batch = make([]*Commit, 0, batchSize)
 		}
-		l.inflight.list.Remove(e)
 	}
-
 	l.inflight.l.Unlock()
 	if len(batch) > 0 {
 		l.raft.applyCommits(batch)

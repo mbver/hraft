@@ -72,7 +72,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		transport:          trans,
 		heartbeatCh:        trans.HeartbeatCh(),
 		rpchCh:             trans.RpcCh(),
-		applyCh:            make(chan *Apply),
+		applyCh:            make(chan *Apply, b.config.MaxAppendEntries),
 		commitNotifyCh:     make(chan struct{}, 1),
 		membershipChangeCh: make(chan *membershipChange),
 		transitionCh:       make(chan *Transition),
