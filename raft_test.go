@@ -281,32 +281,13 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 	leader := c.getNodesByState(leaderStateType)[0]
 	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 
-	collectNilErrCh := make(chan error, 10)
-	collectNonLeaderErrCh := make(chan error, 10)
-	for i := 0; i < 100; i++ {
-		if i == 80 {
-			err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
-			require.Nil(t, err, "failed to remove leader")
-			continue
-		}
-		errCh := leader.Apply([]byte(fmt.Sprintf("test%d", i)), 0)
-		if i < 80 {
-			go func() {
-				err := <-errCh
-				collectNilErrCh <- err
-			}()
-			continue
-		}
-		go func() {
-			err := <-errCh
-			collectNonLeaderErrCh <- err
-		}()
-
-	}
-	err = drainAndCheckErr(collectNilErrCh, nil, 80, 5*time.Second)
+	err = applyAndCheck(leader, 80, 0, nil)
 	require.Nil(t, err)
 
-	err = drainAndCheckErr(collectNonLeaderErrCh, ErrNotLeader, 19, 5*time.Second)
+	err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
+	require.Nil(t, err)
+
+	err = applyAndCheck(leader, 19, 81, ErrNotLeader)
 	require.Nil(t, err)
 
 	time.Sleep(200 * time.Millisecond)
@@ -467,17 +448,10 @@ func TestRaft_UserSnapshot(t *testing.T) {
 	err = snapshot.Close()
 	require.Nil(t, err)
 
-	collectErrCh := make(chan error, 10)
-	for i := 0; i < 10; i++ {
-		errCh := leader.Apply([]byte(fmt.Sprintf("test_%d", i)), 0)
-		go func() {
-			err := <-errCh
-			collectErrCh <- err
-		}()
-	}
-
-	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
+	err = applyAndCheck(leader, 10, 0, nil)
 	require.Nil(t, err)
+
+	sleep()
 
 	openSnapshot, err = leader.Snapshot(0)
 	require.Nil(t, err)
@@ -511,16 +485,7 @@ func TestRaft_AutoSnapshot(t *testing.T) {
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
 	leader := c.getNodesByState(leaderStateType)[0]
 
-	collectErrCh := make(chan error, 10)
-	for i := 0; i < 100; i++ {
-		errCh := leader.Apply([]byte(fmt.Sprintf("test_%d", i)), 0)
-		go func() {
-			err := <-errCh
-			collectErrCh <- err
-		}()
-	}
-
-	err = drainAndCheckErr(collectErrCh, nil, 100, 5*time.Second)
+	err = applyAndCheck(leader, 100, 0, nil)
 	require.Nil(t, err)
 
 	sleep()
@@ -534,87 +499,59 @@ func TestRaft_UserRestore(t *testing.T) {
 	offsets := []uint64{0, 1, 2, 100, 1000, 10000}
 	for _, offset := range offsets {
 		t.Run(fmt.Sprintf("offset=%d", offset), func(t *testing.T) {
-			testSnapShotAndRestore(t, offset)
+			t.Parallel()
+			conf := defaultTestConfig()
+			conf.HeartbeatTimeout = 500 * time.Millisecond
+			conf.ElectionTimeout = 500 * time.Millisecond
+
+			c, cleanup, err := createTestCluster(3, conf)
+			defer cleanup()
+			require.Nil(t, err)
+			sleep()
+			require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+			leader := c.getNodesByState(leaderStateType)[0]
+
+			err = applyAndCheck(leader, 10, 0, nil)
+			require.Nil(t, err)
+			sleep()
+
+			openSnapshot, err := leader.Snapshot(0)
+			require.Nil(t, err)
+
+			err = applyAndCheck(leader, 10, 10, nil)
+			require.Nil(t, err)
+
+			meta, source, err := openSnapshot()
+			require.Nil(t, err)
+			defer source.Close()
+			oldLastIdx, _ := leader.instate.getLastIdxTerm()
+			meta.Idx += offset
+			err = leader.Restore(meta, source, 5*time.Second)
+			require.Nil(t, err)
+
+			sleep()
+			require.True(t, c.isConsistent())
+
+			// 1 idx is to create an index hole
+			// 1 idx is from NoOp log
+			expectedLastIdx := max(meta.Idx, oldLastIdx) + 2
+			newLastIdx, _ := leader.instate.getLastIdxTerm()
+			require.Equal(t, expectedLastIdx, newLastIdx)
+
+			firstState := getRecordCommandState(leader)
+			// state before snapshot is preserved.
+			// state after snapshot is discarded.
+			require.Equal(t, 10, len(firstState))
+			for i, l := range firstState {
+				expected := []byte(fmt.Sprintf("test %d", i))
+				require.True(t, bytes.Equal(expected, l.Data), fmt.Sprintf("expect: %s, got: %s", expected, l.Data))
+			}
+
+			err = applyAndCheck(leader, 10, 20, nil)
+			require.Nil(t, err)
+
+			sleep()
+			require.True(t, c.isConsistent())
 		})
 	}
-}
-
-func testSnapShotAndRestore(t *testing.T, offset uint64) {
-	t.Parallel()
-	conf := defaultTestConfig()
-	conf.HeartbeatTimeout = 500 * time.Millisecond
-	conf.ElectionTimeout = 500 * time.Millisecond
-
-	c, cleanup, err := createTestCluster(3, conf)
-	defer cleanup()
-	require.Nil(t, err)
-	sleep()
-	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
-	leader := c.getNodesByState(leaderStateType)[0]
-
-	collectErrCh := make(chan error, 10)
-	for i := 0; i < 10; i++ {
-		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
-		go func() {
-			err := <-errCh
-			collectErrCh <- err
-		}()
-	}
-	sleep()
-	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
-	require.Nil(t, err)
-
-	openSnapshot, err := leader.Snapshot(0)
-	require.Nil(t, err)
-
-	collectErrCh = make(chan error, 10)
-	for i := 10; i < 20; i++ {
-		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
-		go func() {
-			err := <-errCh
-			collectErrCh <- err
-		}()
-	}
-	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
-	require.Nil(t, err)
-
-	meta, source, err := openSnapshot()
-	require.Nil(t, err)
-	defer source.Close()
-	oldLastIdx, _ := leader.instate.getLastIdxTerm()
-	meta.Idx += offset
-	err = leader.Restore(meta, source, 5*time.Second)
-	require.Nil(t, err)
-
-	sleep()
-	require.True(t, c.isConsistent())
-
-	// 1 idx is to create an index hole
-	// 1 idx is from NoOp log
-	expectedLastIdx := max(meta.Idx, oldLastIdx) + 2
-	newLastIdx, _ := leader.instate.getLastIdxTerm()
-	require.Equal(t, expectedLastIdx, newLastIdx)
-
-	firstState := getRecordCommandState(leader)
-	// state before snapshot is preserved.
-	// state after snapshot is discarded.
-	require.Equal(t, 10, len(firstState))
-	for i, l := range firstState {
-		expected := []byte(fmt.Sprintf("test %d", i))
-		require.True(t, bytes.Equal(expected, l.Data), fmt.Sprintf("expect: %s, got: %s", expected, l.Data))
-	}
-
-	collectErrCh = make(chan error, 10)
-	for i := 20; i < 30; i++ {
-		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
-		go func() {
-			err := <-errCh
-			collectErrCh <- err
-		}()
-	}
-	err = drainAndCheckErr(collectErrCh, nil, 10, 5*time.Second)
-	require.Nil(t, err)
-
-	sleep()
-	require.True(t, c.isConsistent())
 }

@@ -525,3 +525,15 @@ func drainAndCheckErr(errCh chan error, wantErr error, n int, timeout time.Durat
 	}
 	return nil
 }
+
+func applyAndCheck(leader *Raft, n int, offset int, wantErr error) error {
+	collectErrCh := make(chan error, 10)
+	for i := 0; i < n; i++ {
+		errCh := leader.Apply([]byte(fmt.Sprintf("test %d", i+offset)), 0)
+		go func() {
+			err := <-errCh
+			collectErrCh <- err
+		}()
+	}
+	return drainAndCheckErr(collectErrCh, wantErr, n, 5*time.Second)
+}
