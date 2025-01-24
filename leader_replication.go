@@ -85,11 +85,6 @@ func (r *peerReplication) replicate() {
 	var nextIdx uint64
 	for {
 		nextIdx = r.getNextIdx()
-		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
-		// skip snapshot stuffs for now
-		if err != nil { // reporting error and stop node ??
-			return
-		}
 		entries, err := r.raft.getEntries(nextIdx, uptoIdx)
 		if err != nil && err != ErrLogNotFound {
 			r.raft.logger.Error("failed to get entries", "from", nextIdx, "to", uptoIdx, "error", err)
@@ -103,6 +98,12 @@ func (r *peerReplication) replicate() {
 			}
 			continue
 		}
+		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
+		if err != nil {
+			r.raft.logger.Error("failed to get prevlog", "error", err)
+			return
+		}
+
 		req := &AppendEntriesRequest{
 			Term:            r.currentTerm,
 			Leader:          []byte(r.raft.ID()),
@@ -141,6 +142,10 @@ func (r *peerReplication) replicate() {
 		if !res.PrevLogCheckFailed {
 			r.backoff.next()
 		}
+		// in the case leader is removed
+		// we expect last replication will update leader-commit
+		// and applied new membership to followers
+		// so this wait has to be put at the end of loop
 		if !r.waitForSignals(time.After(r.backoff.getValue()), nil) {
 			return
 		}

@@ -85,10 +85,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 	}
 	success, msg := retry(5, func() (bool, string) {
 		time.Sleep(100 * time.Millisecond)
-		if !c.isConsistent() {
-			return false, "cluster is inconsistent"
-		}
-		return true, ""
+		return c.isConsistent()
 	})
 	require.True(t, success, msg)
 }
@@ -140,7 +137,8 @@ func TestRaft_RemoveFollower(t *testing.T) {
 
 	c.remove(follower0.ID())
 	defer follower0.Shutdown()
-	require.True(t, c.isConsistent())
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
 }
 
 func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
@@ -167,7 +165,8 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 
 	c.remove(follower0.ID())
 	defer follower0.Shutdown()
-	require.True(t, c.isConsistent())
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
 
 	err = leader.AddVoter(follower0.ID(), 0)
 	require.Nil(t, err)
@@ -189,10 +188,7 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 	require.Equal(t, RoleVoter, leader.membership.getPeer(follower0.ID()))
 	success, msg = retry(5, func() (bool, string) {
 		time.Sleep(100 * time.Millisecond)
-		if !c.isConsistent() {
-			return false, "inconsistent state"
-		}
-		return true, ""
+		return c.isConsistent()
 	})
 	require.True(t, success, msg)
 }
@@ -250,7 +246,8 @@ func TestRaft_RemoveLeader(t *testing.T) {
 	require.True(t, reflect.DeepEqual(leader.Voters(), oldLeader.Voters()))
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower.Voters()))
 
-	require.True(t, c.isConsistent())
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
 }
 
 func TestRaft_RemoveLeader_AndApply(t *testing.T) {
@@ -266,7 +263,8 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 	err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
 	require.Nil(t, err)
 
-	err = applyAndCheck(leader, 19, 81, ErrNotLeader)
+	oldLeader := leader
+	err = applyAndCheck(oldLeader, 19, 81, ErrNotLeader)
 	require.Nil(t, err)
 
 	time.Sleep(200 * time.Millisecond)
@@ -286,7 +284,6 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 
 	follower := c.getNodesByState(followerStateType)[1]
 	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
-	oldLeader := leader
 	leader = c.getNodesByState(leaderStateType)[0]
 
 	require.Equal(t, 2, len(follower.Voters()))
@@ -296,7 +293,8 @@ func TestRaft_RemoveLeader_AndApply(t *testing.T) {
 	require.True(t, reflect.DeepEqual(leader.Voters(), oldLeader.Voters()))
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower.Voters()))
 
-	require.True(t, c.isConsistent())
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
 }
 
 func TestRaft_AddKnownPeer(t *testing.T) {
@@ -459,12 +457,32 @@ func TestRaft_AutoSnapshot(t *testing.T) {
 func TestRaft_SendLatestSnapshot(t *testing.T) {
 	t.Parallel()
 	conf := defaultTestConfig()
+	conf.HeartbeatTimeout = 500 * time.Millisecond
 	conf.NumTrailingLogs = 10
-	_, cleanup, err := createTestCluster(1, conf)
+	c, cleanup, err := createTestCluster(3, conf)
 	defer cleanup()
 	require.Nil(t, err)
-	// leader := c.getNodesByState(leaderStateType)[0]
 
+	behindFo := c.getNodesByState(followerStateType)[0]
+	c.partition(behindFo.ID())
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	err = applyAndCheck(leader, 100, 0, nil)
+	require.Nil(t, err)
+	sleep()
+	errCh := make(chan error, 3)
+	for _, r := range c.rafts {
+		go func() {
+			_, err := r.Snapshot(0) // truncate logs
+			errCh <- err
+		}()
+	}
+	err = drainAndCheckErr(errCh, nil, 3, 5*time.Second)
+	require.Nil(t, err)
+	c.unPartition(behindFo.ID())
+	time.Sleep(1 * time.Second)
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
 }
 
 func TestRaft_UserRestore(t *testing.T) {
@@ -502,7 +520,8 @@ func TestRaft_UserRestore(t *testing.T) {
 			require.Nil(t, err)
 
 			sleep()
-			require.True(t, c.isConsistent())
+			consistent, msg := c.isConsistent()
+			require.True(t, consistent, msg)
 
 			// 1 idx is to create an index hole
 			// 1 idx is from NoOp log
@@ -523,7 +542,8 @@ func TestRaft_UserRestore(t *testing.T) {
 			require.Nil(t, err)
 
 			sleep()
-			require.True(t, c.isConsistent())
+			consistent, msg = c.isConsistent()
+			require.True(t, consistent, msg)
 		})
 	}
 }

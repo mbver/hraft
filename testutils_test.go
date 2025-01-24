@@ -261,22 +261,70 @@ func compareStates(state1, state2 []*Log) bool {
 	return true
 }
 
-func (c *cluster) isConsistent() bool {
-	firstCommands := getRecordCommandState(c.rafts[0])
+func peersToString(peers []*Peer) string {
+	buf := &strings.Builder{}
+	buf.WriteRune('[')
+	for i, p := range peers {
+		if i == 0 {
+			buf.WriteRune('{')
+		} else {
+			buf.WriteString(",{")
+		}
+		buf.WriteString(fmt.Sprintf("Id: %s, role: %s", p.ID, p.Role.String()))
+		buf.WriteString("}")
+	}
+	buf.WriteRune(']')
+	return buf.String()
+}
+
+func stateToString(state []*Log) string {
+	buf := &strings.Builder{}
+	buf.WriteRune('[')
+	for _, l := range state {
+		buf.WriteString("\n{")
+		data := string(l.Data)
+		if l.Type == LogMembership {
+			peers := []*Peer{}
+			err := decode(l.Data, &peers)
+			if err != nil {
+				panic(err)
+			}
+			data = peersToString(peers)
+		}
+		buf.WriteString(fmt.Sprintf("idx:%d, term: %d, data: %s", l.Idx, l.Term, data))
+		buf.WriteString("},")
+	}
+	buf.WriteString("\n]")
+	return buf.String()
+}
+
+func (c *cluster) isConsistent() (bool, string) {
+	first := c.rafts[0]
+	firstCommands := getRecordCommandState(first)
 	for _, raft := range c.rafts[1:] {
 		state := getRecordCommandState(raft)
 		if !compareStates(firstCommands, state) {
-			return false
+			return false,
+				fmt.Sprintf("command_state unmatched. \n%s:%s ---------- \n%s:%s",
+					first.ID(), stateToString(firstCommands),
+					raft.ID(),
+					stateToString(state),
+				)
 		}
 	}
-	firstMembership := getRecordMembershipState(c.rafts[0])
+	firstMembership := getRecordMembershipState(first)
 	for _, raft := range c.rafts[1:] {
 		state := getRecordMembershipState(raft)
 		if !compareStates(firstMembership, state) {
-			return false
+			return false,
+				fmt.Sprintf("membership_state unmatched. \n%s:%s \n---------- \n%s:%s",
+					first.ID(), stateToString(firstMembership),
+					raft.ID(),
+					stateToString(state),
+				)
 		}
 	}
-	return true
+	return true, ""
 }
 
 func logsToString(logs []*Log) string {

@@ -204,11 +204,11 @@ func (l *Leader) HandleApply(a *Apply) {
 	batch := make([]*Apply, 0, batchSize)
 	batch = append(batch, a)
 	hasApplies := true
-	for i := 0; hasApplies && i < batchSize; i++ {
+	for len(batch) < batchSize && hasApplies {
 		select {
 		case a := <-l.raft.applyCh:
 			batch = append(batch, a)
-		default:
+		case <-time.After(5 * time.Millisecond): // wait a bit to avoid spurious effect of default
 			hasApplies = false
 		}
 	}
