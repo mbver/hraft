@@ -299,6 +299,7 @@ func stateToString(state []*Log) string {
 }
 
 func (c *cluster) isConsistent() (bool, string) {
+	sleep()
 	first := c.rafts[0]
 	firstCommands := getRecordCommandState(first)
 	for _, raft := range c.rafts[1:] {

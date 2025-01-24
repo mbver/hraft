@@ -83,10 +83,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 			t.Fatalf("expect no timeout")
 		}
 	}
-	success, msg := retry(5, func() (bool, string) {
-		time.Sleep(100 * time.Millisecond)
-		return c.isConsistent()
-	})
+	success, msg := retry(5, c.isConsistent)
 	require.True(t, success, msg)
 }
 
@@ -186,10 +183,7 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower0.Voters()), fmt.Sprintf("expect: %v, got: %v", leader.Voters(), follower0.Voters()))
 	require.True(t, reflect.DeepEqual(leader.Voters(), follower1.Voters()), fmt.Sprintf("expect: %v, got: %v", leader.Voters(), follower1.Voters()))
 	require.Equal(t, RoleVoter, leader.membership.getPeer(follower0.ID()))
-	success, msg = retry(5, func() (bool, string) {
-		time.Sleep(100 * time.Millisecond)
-		return c.isConsistent()
-	})
+	success, msg = retry(5, c.isConsistent)
 	require.True(t, success, msg)
 }
 
@@ -457,7 +451,7 @@ func TestRaft_AutoSnapshot(t *testing.T) {
 func TestRaft_SendLatestSnapshot(t *testing.T) {
 	t.Parallel()
 	conf := defaultTestConfig()
-	conf.HeartbeatTimeout = 500 * time.Millisecond
+	// conf.HeartbeatTimeout = 500 * time.Millisecond
 	conf.NumTrailingLogs = 10
 	c, cleanup, err := createTestCluster(3, conf)
 	defer cleanup()
@@ -480,9 +474,8 @@ func TestRaft_SendLatestSnapshot(t *testing.T) {
 	err = drainAndCheckErr(errCh, nil, 3, 5*time.Second)
 	require.Nil(t, err)
 	c.unPartition(behindFo.ID())
-	time.Sleep(1 * time.Second)
-	consistent, msg := c.isConsistent()
-	require.True(t, consistent, msg)
+	success, msg := retry(5, c.isConsistent)
+	require.True(t, success, msg)
 }
 
 func TestRaft_UserRestore(t *testing.T) {
@@ -519,7 +512,6 @@ func TestRaft_UserRestore(t *testing.T) {
 			err = leader.Restore(meta, source, 5*time.Second)
 			require.Nil(t, err)
 
-			sleep()
 			consistent, msg := c.isConsistent()
 			require.True(t, consistent, msg)
 
@@ -541,7 +533,6 @@ func TestRaft_UserRestore(t *testing.T) {
 			err = applyAndCheck(leader, 10, 20, nil)
 			require.Nil(t, err)
 
-			sleep()
 			consistent, msg = c.isConsistent()
 			require.True(t, consistent, msg)
 		})
