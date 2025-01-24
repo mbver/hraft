@@ -510,3 +510,18 @@ func createTestNode(conf *Config) (*Raft, func(), error) {
 	cleanup := combineCleanup(raft.Shutdown, addrSource.cleanup)
 	return raft, cleanup, err
 }
+
+func drainAndCheckErr(errCh chan error, wantErr error, n int, timeout time.Duration) error {
+	timeoutCh := time.After(timeout)
+	for i := 0; i < n; i++ {
+		select {
+		case err := <-errCh:
+			if err != wantErr {
+				return err
+			}
+		case <-timeoutCh:
+			return fmt.Errorf("timeout")
+		}
+	}
+	return nil
+}

@@ -529,22 +529,17 @@ func TestRaft_AutoSnapshot(t *testing.T) {
 	require.NotZero(t, len(metas))
 }
 
-func drainAndCheckErr(errCh chan error, wantErr error, n int, timeout time.Duration) error {
-	timeoutCh := time.After(timeout)
-	for i := 0; i < n; i++ {
-		select {
-		case err := <-errCh:
-			if err != wantErr {
-				return err
-			}
-		case <-timeoutCh:
-			return fmt.Errorf("timeout")
-		}
+func TestRaft_UserRestore(t *testing.T) {
+	t.Parallel()
+	offsets := []uint64{0, 1, 2, 100, 1000, 10000}
+	for _, offset := range offsets {
+		t.Run(fmt.Sprintf("offset=%d", offset), func(t *testing.T) {
+			testSnapShotAndRestore(t, offset)
+		})
 	}
-	return nil
 }
 
-func TestRaft_UserRestore(t *testing.T) {
+func testSnapShotAndRestore(t *testing.T, offset uint64) {
 	t.Parallel()
 	conf := defaultTestConfig()
 	conf.HeartbeatTimeout = 500 * time.Millisecond
@@ -587,7 +582,7 @@ func TestRaft_UserRestore(t *testing.T) {
 	require.Nil(t, err)
 	defer source.Close()
 	oldLastIdx, _ := leader.instate.getLastIdxTerm()
-	meta.Idx += 30
+	meta.Idx += offset
 	err = leader.Restore(meta, source, 5*time.Second)
 	require.Nil(t, err)
 
