@@ -308,6 +308,8 @@ func (a *recordCommandState) BatchSize() int {
 }
 
 func (a *recordCommandState) WriteToSnapshot(snap *Snapshot) error {
+	a.l.Lock()
+	defer a.l.Unlock()
 	if len(a.commands) == 0 {
 		return nil
 	}
@@ -323,6 +325,8 @@ func (a *recordCommandState) WriteToSnapshot(snap *Snapshot) error {
 }
 
 func (a *recordCommandState) Restore(source io.ReadCloser) error {
+	a.l.Lock()
+	defer a.l.Unlock()
 	defer source.Close()
 	dec := codec.NewDecoder(source, &codec.MsgpackHandle{})
 	a.commands = nil

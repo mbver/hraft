@@ -531,7 +531,7 @@ func TestRaft_UserRestore(t *testing.T) {
 	errCh := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			err = leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
+			err := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
 			errCh <- err
 		}()
 	}
@@ -546,7 +546,7 @@ func TestRaft_UserRestore(t *testing.T) {
 	errCh = make(chan error, 10)
 	for i := 10; i < 20; i++ {
 		go func() {
-			err = leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
+			err := leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
 			errCh <- err
 		}()
 	}
@@ -559,4 +559,7 @@ func TestRaft_UserRestore(t *testing.T) {
 	meta.Idx += 30
 	err = leader.Restore(meta, source, 5*time.Second)
 	require.Nil(t, err)
+
+	sleep()
+	require.True(t, c.isConsistent())
 }
