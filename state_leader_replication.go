@@ -93,7 +93,9 @@ func (r *peerReplication) replicate() {
 		if err == ErrLogNotFound {
 			err = r.sendLatestSnapshot()
 			if err != nil {
-				r.raft.logger.Error("failed to install latest snapshot")
+				r.raft.logger.Error("failed to install latest snapshot", "error", err)
+				r.backoff.next()
+				r.waitForSignals(time.After(r.backoff.getValue()), nil)
 				return
 			}
 			continue
@@ -183,14 +185,12 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	}
 	res := &InstallSnapshotResponse{}
 	if err := r.raft.transport.InstallSnapshot(r.addr, req, res, snapshot); err != nil {
-		r.raft.logger.Error("failed to install snapshot", "name", meta.Name, "error", err)
-		r.backoff.next()
 		return err
 	}
 	if res.Term > req.Term {
 		r.stepdown.Close() // stop all replication
 		<-r.raft.dispatchTransition(followerStateType, res.Term)
-		return nil
+		return fmt.Errorf("stale term: current: %d, received: %d", r.currentTerm, res.Term)
 	}
 	if res.Success {
 		r.setNextIdx(meta.Idx + 1)
@@ -201,7 +201,7 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	}
 	r.backoff.next()
 	r.raft.logger.Warn("installSnapshot rejected", "peer", r.addr)
-	return nil
+	return fmt.Errorf("installSnapshot rejected peer=%s", r.addr)
 }
 
 func (r *peerReplication) heartbeat() {
