@@ -497,6 +497,64 @@ func TestRaft_SendLatestSnapshot(t *testing.T) {
 	require.True(t, success, msg)
 }
 
+func TestRaft_SendLatestSnapshotAndLogs(t *testing.T) {
+	t.Parallel()
+	conf := defaultTestConfig()
+	// conf.HeartbeatTimeout = 500 * time.Millisecond
+	conf.NumTrailingLogs = 10
+	c, cleanup, err := createTestCluster(3, conf)
+	defer cleanup()
+	require.Nil(t, err)
+
+	behindFo := c.getNodesByState(followerStateType)[0]
+	c.partition(behindFo.ID())
+
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	err = applyAndCheck(leader, 100, 0, nil)
+	require.Nil(t, err)
+	sleep()
+	errCh := make(chan error, 3)
+	for _, r := range c.rafts {
+		go func() {
+			_, err := r.Snapshot(0) // truncate logs
+			errCh <- err
+		}()
+	}
+	err = drainAndCheckErr(errCh, nil, 3, 5*time.Second)
+	require.Nil(t, err)
+
+	err = applyAndCheck(leader, 100, 100, nil)
+	require.Nil(t, err)
+	c.unPartition(behindFo.ID())
+
+	// wait for leadership change to kicks in
+	sleep()
+	// wait and check until leadership change finished
+	ok, msg := retry(5, func() (bool, string) {
+		sleep()
+		err = checkClusterState(c)
+		if err != nil {
+			return false, fmt.Sprintf("cluster state check failed: %s", err.Error())
+		}
+		return true, ""
+	})
+	require.True(t, ok, msg)
+
+	leader = c.getNodesByState(leaderStateType)[0]
+
+	// if leadership changed, this will send a log with new term
+	// and should be added in the state of all nodes.
+	// if new leader's logs is shorter than old leader,
+	// this should induce log truncation.
+	applyAndCheck(leader, 1, 200, nil)
+
+	success, msg := retry(5, c.isConsistent)
+	require.True(t, success, msg)
+}
+
 func TestRaft_UserRestore(t *testing.T) {
 	t.Parallel()
 	offsets := []uint64{0, 1, 2, 100, 1000, 10000}

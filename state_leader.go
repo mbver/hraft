@@ -56,7 +56,7 @@ func (l *Leader) StepUp() {
 		l.staging.stage(id)
 	}
 	commitIdx := l.raft.instate.getCommitIdx()
-	l.commit = newCommitControl(commitIdx, l.raft.commitNotifyCh)
+	l.commit = newCommitControl(commitIdx, l.raft.commitNotifyCh, l.raft.Voters())
 	l.inflight.Reset()
 	l.startReplication()
 	go l.receiveStaging()

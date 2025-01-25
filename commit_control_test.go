@@ -8,7 +8,7 @@ import (
 
 func TestCommitControl_UpdateVoters(t *testing.T) {
 	commitCh := make(chan struct{}, 1)
-	c := newCommitControl(10, commitCh)
+	c := newCommitControl(10, commitCh, []string{})
 	c.updateVoters([]string{"a", "b", "c"})
 	c.updateMatchIdx("a", 10)
 	c.updateMatchIdx("b", 20)
@@ -23,7 +23,7 @@ func TestCommitControl_UpdateVoters(t *testing.T) {
 
 func TestCommitControl_UpdateMatchIdx_NonVoters(t *testing.T) {
 	commitCh := make(chan struct{}, 1)
-	c := newCommitControl(4, commitCh)
+	c := newCommitControl(4, commitCh, []string{})
 	c.updateVoters([]string{"a", "b", "c", "d", "e"})
 	c.updateMatchIdx("a", 8)
 	c.updateMatchIdx("b", 8)
@@ -43,7 +43,7 @@ func TestCommitControl_UpdateMatchIdx_NonVoters(t *testing.T) {
 
 func TestCommitControl_UpdateCommitIdx(t *testing.T) {
 	commitCh := make(chan struct{}, 1)
-	c := newCommitControl(0, commitCh)
+	c := newCommitControl(0, commitCh, []string{})
 	c.updateVoters([]string{"a", "b", "c", "d", "e"})
 
 	c.updateMatchIdx("a", 30)
@@ -78,7 +78,7 @@ func TestCommitControl_UpdateCommitIdx(t *testing.T) {
 
 func TestCommitControl_StartIdx(t *testing.T) {
 	commitCh := make(chan struct{}, 1)
-	c := newCommitControl(4, commitCh)
+	c := newCommitControl(4, commitCh, []string{})
 	c.updateVoters([]string{"a", "b", "c", "d", "e"})
 
 	c.updateMatchIdx("a", 3)
@@ -98,7 +98,7 @@ func TestCommitControl_StartIdx(t *testing.T) {
 
 func TestCommitControl_NoVoters(t *testing.T) {
 	commitCh := make(chan struct{}, 1)
-	c := newCommitControl(4, commitCh)
+	c := newCommitControl(4, commitCh, []string{})
 	c.updateVoters([]string{})
 	c.updateMatchIdx("a", 10)
 
@@ -117,7 +117,7 @@ func TestCommitControl_NoVoters(t *testing.T) {
 
 func TestCommitControl_SingleVoter(t *testing.T) {
 	commitCh := make(chan struct{}, 1)
-	c := newCommitControl(4, commitCh)
+	c := newCommitControl(4, commitCh, []string{})
 	c.updateVoters([]string{"a"})
 	c.updateMatchIdx("a", 10)
 

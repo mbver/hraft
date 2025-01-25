@@ -12,10 +12,15 @@ type commitControl struct {
 	commitIdx      uint64
 }
 
-func newCommitControl(startIdx uint64, commitNotifyCh chan struct{}) *commitControl {
+func newCommitControl(startIdx uint64, commitNotifyCh chan struct{}, voters []string) *commitControl {
+	matchIdxs := map[string]uint64{}
+	for _, id := range voters {
+		matchIdxs[id] = 0
+	}
 	return &commitControl{
 		commitNotifyCh: commitNotifyCh,
 		commitIdx:      startIdx,
+		matchIdxs:      matchIdxs,
 	}
 }
 
