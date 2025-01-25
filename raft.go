@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
@@ -175,7 +174,7 @@ func (r *Raft) receiveSnapshotRequests() {
 				}
 			}
 			req.errCh <- err
-		case <-jitterTimeoutCh(time.Duration(r.config.SnapshotInterval)):
+		case <-jitterTimeoutCh((r.config.SnapshotInterval)):
 			if !r.shouldSnapshot() {
 				continue
 			}
