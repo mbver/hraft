@@ -45,11 +45,26 @@ func (r *peerReplication) setNextIdx(idx uint64) {
 
 // wait for signals fires from timeCh or sigCh until the replication is stopped.
 // if replication is stopped, return false to signify waiting goro to stop too.
-func (r *peerReplication) waitForSignals(timeCh <-chan time.Time, sigCh chan struct{}) (gotSignal bool) {
+func (r *peerReplication) waitForIntervalOrSignals(interval time.Duration, sigCh chan struct{}) (gotSignal bool) {
+	timeoutCh := jitterTimeoutCh(interval)
 	select {
-	case <-timeCh:
+	case <-timeoutCh:
 		return true
 	case <-sigCh:
+		return true
+	case <-r.stopCh:
+		return false
+	case <-r.stepdown.Ch():
+		return false
+	case <-r.raft.shutdownCh():
+		return false
+	}
+}
+
+func (r *peerReplication) waitForBackoff(b *backoff) (gotSignal bool) {
+	timeoutCh := time.After(b.getValue())
+	select {
+	case <-timeoutCh:
 		return true
 	case <-r.stopCh:
 		return false
@@ -69,7 +84,7 @@ func (r *peerReplication) run() {
 	// Start an async heartbeating routing
 	go r.heartbeat()
 	for {
-		if !r.waitForSignals(jitterTimeoutCh(r.commitSyncInterval), r.logAddedCh) {
+		if !r.waitForIntervalOrSignals(r.commitSyncInterval, r.logAddedCh) {
 			if !tryGetNotify(r.raft.shutdownCh()) {
 				r.raft.logger.Info(
 					"last replication",
@@ -99,7 +114,7 @@ func (r *peerReplication) replicate() {
 			err = r.sendLatestSnapshot()
 			if err != nil {
 				r.raft.logger.Error("failed to install latest snapshot", "error", err)
-				r.waitForSignals(time.After(r.backoff.getValue()), nil)
+				r.waitForBackoff(r.backoff)
 				return
 			}
 			continue
@@ -122,7 +137,7 @@ func (r *peerReplication) replicate() {
 		if err = r.raft.transport.AppendEntries(r.addr, req, res); err != nil {
 			r.raft.logger.Error("transport append_entries failed", "peer", r.addr, "error", err)
 			r.backoff.next()
-			r.waitForSignals(time.After(r.backoff.getValue()), nil)
+			r.waitForBackoff(r.backoff)
 			return
 		}
 		if res.Term > r.currentTerm {
@@ -156,7 +171,7 @@ func (r *peerReplication) replicate() {
 		// we expect last replication will update leader-commit
 		// and applied new membership to followers
 		// so this wait has to be put at the end of loop
-		if !r.waitForSignals(time.After(r.backoff.getValue()), nil) {
+		if !r.waitForBackoff(r.backoff) {
 			return
 		}
 	}
@@ -224,11 +239,11 @@ func (r *peerReplication) heartbeat() {
 	}
 	var resp AppendEntriesResponse
 	for {
-		if !r.waitForSignals(time.After(backoff.getValue()), nil) {
+		if !r.waitForBackoff(backoff) {
 			return
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
-		if !r.waitForSignals(jitterTimeoutCh(r.heartbeatTimeout/10), r.pulseCh) {
+		if !r.waitForIntervalOrSignals(r.heartbeatTimeout/10, r.pulseCh) {
 			return
 		}
 		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
