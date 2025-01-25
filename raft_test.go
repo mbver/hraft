@@ -460,6 +460,9 @@ func TestRaft_SendLatestSnapshot(t *testing.T) {
 	behindFo := c.getNodesByState(followerStateType)[0]
 	c.partition(behindFo.ID())
 
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
+
 	leader := c.getNodesByState(leaderStateType)[0]
 	err = applyAndCheck(leader, 100, 0, nil)
 	require.Nil(t, err)
@@ -473,6 +476,22 @@ func TestRaft_SendLatestSnapshot(t *testing.T) {
 	}
 	err = drainAndCheckErr(errCh, nil, 3, 5*time.Second)
 	require.Nil(t, err)
+	// sleep long enough to increase exponential backoff.
+	// faulty implementation can cause this scenario:
+	// exponential backoff of replicate loop is enormous.
+	// if the partioned node transitioned back to follower
+	// just about reconnection time, and the leader is frozen
+	// by exponential backoff but heartbeat still working,
+	// then the behind follower may not receive snapshot
+	// and failed consistent check after retry times.
+	// with correct implementation, backoffs of heartbeat
+	// and replicate will be almost the same in the case of
+	// network failure. they succeed or fail together.
+	// if heartbeat failed, that makes the node transition to candidate
+	// and unblock the frozen situation.
+	// furthermore, correct implementation makes backoff time smaller
+	// than the sleep time.
+	time.Sleep(1 * time.Second)
 	c.unPartition(behindFo.ID())
 	success, msg := retry(5, c.isConsistent)
 	require.True(t, success, msg)

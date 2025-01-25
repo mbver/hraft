@@ -51,7 +51,7 @@ func newTestLogger(name string) hclog.Logger {
 	return hclog.New(&hclog.LoggerOptions{
 		Name:   name,
 		Output: hclog.DefaultOutput,
-		Level:  hclog.DefaultLevel,
+		Level:  hclog.Debug,
 	})
 }
 
@@ -298,9 +298,25 @@ func stateToString(state []*Log) string {
 	return buf.String()
 }
 
+func dumpState(raft *Raft) {
+	buf := &strings.Builder{}
+	buf.WriteString(fmt.Sprintf("%s:\n", raft.ID()))
+	buf.WriteString("command state:")
+	commands := getRecordCommandState(raft)
+	str := stateToString(commands)
+	buf.WriteString(str)
+	buf.WriteString("\nmembershitp state:")
+	members := getRecordMembershipState(raft)
+	str = stateToString(members)
+	buf.WriteString(str)
+	buf.WriteString("\n")
+	fmt.Println(buf.String())
+}
+
 func (c *cluster) isConsistent() (bool, string) {
 	sleep()
 	first := c.rafts[0]
+	first.logger.Info("==================== checking for consistency =======================")
 	firstCommands := getRecordCommandState(first)
 	for _, raft := range c.rafts[1:] {
 		state := getRecordCommandState(raft)

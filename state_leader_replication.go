@@ -71,6 +71,11 @@ func (r *peerReplication) run() {
 	for {
 		if !r.waitForSignals(jitterTimeoutCh(r.commitSyncInterval), r.logAddedCh) {
 			if !tryGetNotify(r.raft.shutdownCh()) {
+				r.raft.logger.Info(
+					"last replication",
+					"peer", r.addr,
+					"stepdown", r.stepdown.IsClosed(),
+				)
 				r.replicate()
 			}
 			return
@@ -94,7 +99,6 @@ func (r *peerReplication) replicate() {
 			err = r.sendLatestSnapshot()
 			if err != nil {
 				r.raft.logger.Error("failed to install latest snapshot", "error", err)
-				r.backoff.next()
 				r.waitForSignals(time.After(r.backoff.getValue()), nil)
 				return
 			}
@@ -116,12 +120,16 @@ func (r *peerReplication) replicate() {
 		}
 		res := &AppendEntriesResponse{}
 		if err = r.raft.transport.AppendEntries(r.addr, req, res); err != nil {
+			r.raft.logger.Error("transport append_entries failed", "peer", r.addr, "error", err)
 			r.backoff.next()
+			r.waitForSignals(time.After(r.backoff.getValue()), nil)
 			return
 		}
 		if res.Term > r.currentTerm {
-			r.stepdown.Close() // stop all replication
-			<-r.raft.dispatchTransition(followerStateType, res.Term)
+			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
+				r.stepdown.Close() // stop all replication
+				<-r.raft.dispatchTransition(followerStateType, res.Term)
+			}
 			return
 		}
 		if res.Success {
@@ -170,8 +178,7 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	}
 	meta, snapshot, err := r.raft.snapstore.OpenSnapshot(metas[0].Name)
 	if err != nil {
-		r.raft.logger.Error("failed to open snapshot", "name", metas[0].Name, "error", err)
-		return err
+		return fmt.Errorf("failed to open snapshot %w", err)
 	}
 	defer snapshot.Close()
 
@@ -185,11 +192,14 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	}
 	res := &InstallSnapshotResponse{}
 	if err := r.raft.transport.InstallSnapshot(r.addr, req, res, snapshot); err != nil {
+		r.backoff.next()
 		return err
 	}
 	if res.Term > req.Term {
-		r.stepdown.Close() // stop all replication
-		<-r.raft.dispatchTransition(followerStateType, res.Term)
+		if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
+			r.stepdown.Close() // stop all replication
+			<-r.raft.dispatchTransition(followerStateType, res.Term)
+		}
 		return fmt.Errorf("stale term: current: %d, received: %d", r.currentTerm, res.Term)
 	}
 	if res.Success {

@@ -149,7 +149,11 @@ func (r *Raft) receiveTransitions() {
 	for {
 		select {
 		case transition := <-r.transitionCh:
-			r.logger.Info("receive transition msg", "transition", transition.String())
+			r.logger.Info("receive transition msg",
+				"transition", transition.String(),
+				"current_state", r.getStateType().String(),
+				"current_term", r.getTerm(),
+			)
 			r.getState().HandleTransition(transition)
 			close(transition.DoneCh)
 		case <-r.shutdownCh():

@@ -352,7 +352,7 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 	// reject older last log term
 	if lastTerm > req.LastLogTerm {
 		r.logger.Warn("rejecting vote request since our last term is greater",
-			"candidate", candidate,
+			"candidate", string(candidate),
 			"last-term", lastTerm,
 			"last-candidate-term", req.LastLogTerm)
 		return
@@ -360,7 +360,7 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 	// reject older last logIdx
 	if lastTerm == req.LastLogTerm && lastIdx > req.LastLogIdx {
 		r.logger.Warn("rejecting vote request since our last index is greater",
-			"candidate", candidate,
+			"candidate", string(candidate),
 			"last-index", lastIdx,
 			"last-candidate-index", req.LastLogIdx)
 		return
@@ -371,7 +371,11 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 		r.logger.Error("failed to persist vote", "error", err)
 		return
 	}
-
+	r.logger.Info(
+		"persist vote for",
+		"candidate", string(candidate),
+		"term", req.Term,
+	)
 	resp.Granted = true
 	r.heartbeatTimeout.reset()
 }

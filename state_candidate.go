@@ -43,6 +43,11 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 		c.raft.setTerm(trans.Term)
 		c.raft.setStateType(followerStateType)
 		c.raft.heartbeatTimeout.reset()
+		c.raft.logger.Debug(
+			"finished transition to follower from candidate",
+			"candidate_term", c.getTerm(),
+			"current_term", c.raft.getTerm(),
+		)
 	case leaderStateType:
 		if trans.Term != c.getTerm() { // can this happen?
 			return
@@ -90,6 +95,7 @@ func (c *Candidate) runElection() {
 		VoterId: c.raft.ID(),
 		Response: &VoteResponse{
 			Granted: true,
+			Term:    c.getTerm(),
 		},
 	}
 
@@ -118,7 +124,16 @@ func (c *Candidate) runElection() {
 					"error", err)
 				res.Response.Term = req.Term
 				res.Response.Granted = false
+			} else {
+				c.raft.logger.Debug(
+					"vote response",
+					"from", addr,
+					"term", res.Response.Term,
+					"current_term", c.getTerm(),
+					"granted", res.Response.Granted,
+				)
 			}
+
 			voteCh <- res
 		}()
 	}
@@ -141,8 +156,10 @@ func (c *Candidate) runElection() {
 				c.raft.logger.Debug("vote granted", "from", vote.VoterId, "term", resp.Term, "tally", voteGranted)
 			}
 		case <-c.cancel.Ch():
+			c.raft.logger.Debug("election canceled", "term", c.getTerm())
 			return
 		case <-electionTimeoutCh: // election timeout, transition back to follower. run election again in next heartbeat timeout.
+			c.raft.logger.Debug("election timeout, fallback to follower")
 			<-c.raft.dispatchTransition(followerStateType, c.getTerm()-1)
 			return
 		case <-c.raft.shutdownCh():
