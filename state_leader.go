@@ -96,6 +96,7 @@ func (l *Leader) HandleTransition(trans *Transition) {
 			l.Stepdown() // wait for all goros stop?
 			l.raft.setTerm(trans.Term)
 			l.raft.setStateType(followerStateType)
+			logFinishTransition(l.raft.logger, trans, leaderStateType, term)
 		}
 	}
 }

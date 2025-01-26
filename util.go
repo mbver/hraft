@@ -8,6 +8,7 @@ import (
 
 	"math/rand"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-msgpack/codec"
 )
 
@@ -203,4 +204,13 @@ func (w *ProtectedWaitGroup) Wait() {
 	w.blocked = true
 	w.l.Unlock()
 	w.wg.Wait()
+}
+
+func logFinishTransition(logger hclog.Logger, trans *Transition, currentState RaftStateType, currentTerm uint64) {
+	logger.Info(
+		"finish transition",
+		"transition", trans.String(),
+		"current_state", currentState.String(),
+		"current_term", currentTerm,
+	)
 }

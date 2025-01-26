@@ -43,11 +43,7 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 		c.raft.setTerm(trans.Term)
 		c.raft.setStateType(followerStateType)
 		c.raft.heartbeatTimeout.reset()
-		c.raft.logger.Debug(
-			"finished transition to follower from candidate",
-			"candidate_term", c.getTerm(),
-			"current_term", c.raft.getTerm(),
-		)
+		logFinishTransition(c.raft.logger, trans, candidateStateType, c.getTerm())
 	case leaderStateType:
 		if trans.Term != c.getTerm() { // can this happen?
 			return
@@ -57,6 +53,7 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 		leader.setTerm(c.getTerm())
 		leader.StepUp()
 		c.raft.setStateType(leaderStateType)
+		logFinishTransition(c.raft.logger, trans, candidateStateType, c.getTerm())
 	}
 }
 

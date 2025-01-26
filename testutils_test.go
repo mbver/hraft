@@ -298,6 +298,7 @@ func stateToString(state []*Log) string {
 	return buf.String()
 }
 
+// this is used for debugging when tests fail by consistency check!
 func dumpState(raft *Raft) {
 	buf := &strings.Builder{}
 	buf.WriteString(fmt.Sprintf("%s:\n", raft.ID()))

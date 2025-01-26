@@ -13,7 +13,8 @@ func NewFollower(r *Raft) *Follower {
 func (f *Follower) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case candidateStateType:
-		if trans.Term <= f.raft.getTerm() {
+		term := f.raft.getTerm()
+		if trans.Term <= term {
 			return
 		}
 		f.raft.logger.Info("transitioning to candidate", "transition", trans.String())
@@ -25,9 +26,12 @@ func (f *Follower) HandleTransition(trans *Transition) {
 		candidate.l.Unlock()
 		go candidate.runElection()
 		f.raft.setStateType(candidateStateType)
+		logFinishTransition(f.raft.logger, trans, followerStateType, term)
 	case followerStateType:
-		if trans.Term > f.raft.getTerm() {
+		term := f.raft.getTerm()
+		if trans.Term > term {
 			f.raft.setTerm(trans.Term)
+			logFinishTransition(f.raft.logger, trans, followerStateType, term)
 		}
 	}
 }
