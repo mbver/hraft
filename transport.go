@@ -102,12 +102,16 @@ func (p *peerConn) Close() error {
 	return p.conn.Close()
 }
 
-func (p *peerConn) SetDeadlineByDuration(d time.Duration) error {
+func (p *peerConn) SetDeadline(d time.Duration) error {
 	return p.conn.SetDeadline(time.Now().Add(d))
 }
 
-func (p *peerConn) SetReadDeadlineByDuration(d time.Duration) error {
+func (p *peerConn) SetReadDeadline(d time.Duration) error {
 	return p.conn.SetReadDeadline(time.Now().Add(d))
+}
+
+func (p *peerConn) SetWritedDeadline(d time.Duration) error {
+	return p.conn.SetWriteDeadline(time.Now().Add(d))
 }
 
 func (p *peerConn) sendMsg(mType msgType, msg interface{}) error {
@@ -219,7 +223,7 @@ func (t *NetTransport) unaryRPC(addr string, mType msgType, req interface{}, res
 		return err
 	}
 	if t.config.Timeout > 0 {
-		conn.SetDeadlineByDuration(t.config.Timeout)
+		conn.SetDeadline(t.config.Timeout)
 	}
 	if err = conn.sendMsg(mType, req); err != nil {
 		conn.Close()
@@ -249,7 +253,7 @@ func (t *NetTransport) streamRPC(addr string, mType msgType, req interface{}, si
 		if scaled > timeout {
 			timeout = scaled
 		}
-		conn.SetDeadlineByDuration(timeout)
+		conn.SetDeadline(timeout)
 	}
 	if err = conn.sendMsg(mType, req); err != nil {
 		conn.Close()
