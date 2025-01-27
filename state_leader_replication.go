@@ -18,6 +18,8 @@ type peerReplication struct {
 	updateMatchIdx func(string, uint64)
 	// reference to the leader's Raft
 	raft *Raft
+	// reference to replication pipeline in pipeline mode
+	pipeline *replicationPipeline
 	// extracted from raft config for convenient use
 	commitSyncInterval time.Duration
 	heartbeatTimeout   time.Duration
@@ -256,11 +258,69 @@ func (r *peerReplication) sendLatestSnapshot() error {
 }
 
 func (r *peerReplication) runPipeline() {
-
+	pipe, err := newReplicationPipeline(r.addr, r.raft.transport)
+	if err != nil {
+		r.raft.logger.Error("failed to create replication pipeline", "peer", r.addr, "error", err)
+		return
+	}
+	r.pipeline = pipe // need lock? may be not?
+	defer pipe.Close()
+	go r.receivePipelineResponses()
+	for {
+		select {}
+	}
 }
 
-func (r *peerReplication) pipelineReplicate() {
+func (r *peerReplication) receivePipelineResponses() {
+	if !r.raft.wg.Add(1) {
+		return
+	}
+	defer r.raft.wg.Done()
+	var err error
+	for {
+		select {
+		case pending := <-r.pipeline.pendingCh:
+			err = r.pipeline.readResponse(pending.resp)
+			if err != nil {
+				r.pipeline.stop.Close() // anything else?
+				return
+			}
+			// calling it pending is not true anymore!????
+			if term := pending.resp.Term; term > r.currentTerm {
+				<-r.raft.dispatchTransition(followerStateType, term)
+			}
+		case <-r.pipeline.stop.Ch():
+			return // Error?
+		}
+	}
+}
 
+// check for how to exit the loop and stop receive response loop
+func (r *peerReplication) pipelineReplicate() error {
+	uptoIdx, _ := r.raft.getLastLog()
+	var nextIdx uint64
+	for {
+		nextIdx = r.getNextIdx()
+		entries, err := r.raft.getEntries(nextIdx, uptoIdx)
+		if err != nil {
+			return err
+		}
+		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
+		if err != nil {
+			return err
+		}
+		req := &AppendEntriesRequest{
+			Term:            r.currentTerm,
+			Leader:          []byte(r.raft.ID()),
+			PrevLogIdx:      prevIdx,
+			PrevLogTerm:     prevTerm,
+			Entries:         entries,
+			LeaderCommitIdx: r.raft.instate.getCommitIdx(),
+		}
+		if err := r.pipeline.sendRequest(req); err != nil {
+			return err
+		}
+	}
 }
 
 // require caller holds lock

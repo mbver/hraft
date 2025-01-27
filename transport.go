@@ -14,7 +14,10 @@ import (
 	"github.com/hashicorp/go-msgpack/codec"
 )
 
-const DefaultTimeoutScale = 256 * 1024
+const (
+	DefaultTimeoutScale   = 256 * 1024
+	maxRequestsInPipeline = 128
+)
 
 type msgType uint8
 
@@ -407,6 +410,77 @@ func (t *NetTransport) listen() {
 
 		go t.handleConn(conn)
 	}
+}
+
+var ErrPipelineClosed = errors.New("pipeline is closed")
+
+// pending response is queued when an AppendEntriesRequest
+// is sent over pipeline. when response arrived, it will be received
+// and stored in the waiting item.
+type pendingResponse struct {
+	req  *AppendEntriesRequest
+	resp *AppendEntriesResponse
+	err  error
+}
+
+func newPendingResponse(req *AppendEntriesRequest) *pendingResponse {
+	return &pendingResponse{
+		req:  req,
+		resp: &AppendEntriesResponse{},
+	}
+}
+
+type replicationPipeline struct {
+	conn      *peerConn
+	timeout   time.Duration
+	pendingCh chan *pendingResponse
+	stop      *ProtectedChan
+	doneCh    chan struct{}
+}
+
+func newReplicationPipeline(addr string, trans *NetTransport) (*replicationPipeline, error) {
+	conn, err := trans.connGetter.GetConn(addr)
+	if err != nil {
+		return nil, err
+	}
+	return &replicationPipeline{
+		conn:      conn,
+		timeout:   trans.config.Timeout,
+		pendingCh: make(chan *pendingResponse, maxRequestsInPipeline),
+		stop:      newProtectedChan(),
+		doneCh:    make(chan struct{}),
+	}, nil
+}
+
+func (p *replicationPipeline) Close() {
+	if p.stop.IsClosed() {
+		return
+	}
+	p.stop.Close()
+	p.conn.Close()
+}
+
+func (p *replicationPipeline) sendRequest(req *AppendEntriesRequest) error {
+	if p.timeout > 0 {
+		p.conn.SetWritedDeadline(p.timeout)
+	}
+	if err := p.conn.sendMsg(appendEntriesMsgType, req); err != nil {
+		return err
+	}
+	res := newPendingResponse(req)
+	select {
+	case p.pendingCh <- res:
+	case <-p.stop.Ch():
+		return ErrPipelineClosed
+	}
+	return nil
+}
+
+func (p *replicationPipeline) readResponse(resp *AppendEntriesResponse) error {
+	if p.timeout > 0 {
+		p.conn.SetReadDeadline(p.timeout)
+	}
+	return p.conn.readResp(resp)
 }
 
 func (t *NetTransport) handleConn(conn net.Conn) {
