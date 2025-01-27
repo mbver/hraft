@@ -99,6 +99,32 @@ func (r *peerReplication) run() {
 	}
 }
 
+func (r *peerReplication) heartbeat() {
+	r.raft.wg.Add(1)
+	defer r.raft.wg.Done()
+	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
+	req := AppendEntriesRequest{
+		Term:   r.currentTerm,
+		Leader: []byte(r.raft.ID()),
+	}
+	var resp AppendEntriesResponse
+	for {
+		if !r.waitForBackoff(backoff) {
+			return
+		}
+		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
+		if !r.waitForIntervalOrSignals(r.heartbeatTimeout/10, r.pulseCh) {
+			return
+		}
+		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
+			r.raft.logger.Error("failed to heartbeat to", "peer", r.addr, "error", err)
+			backoff.next()
+			continue
+		}
+		backoff.reset()
+	}
+}
+
 func (r *peerReplication) replicate() {
 	uptoIdx, _ := r.raft.getLastLog()
 	<-jitterTimeoutCh(r.heartbeatTimeout / 10)
@@ -229,30 +255,12 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	return fmt.Errorf("installSnapshot rejected peer=%s", r.addr)
 }
 
-func (r *peerReplication) heartbeat() {
-	r.raft.wg.Add(1)
-	defer r.raft.wg.Done()
-	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
-	req := AppendEntriesRequest{
-		Term:   r.currentTerm,
-		Leader: []byte(r.raft.ID()),
-	}
-	var resp AppendEntriesResponse
-	for {
-		if !r.waitForBackoff(backoff) {
-			return
-		}
-		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
-		if !r.waitForIntervalOrSignals(r.heartbeatTimeout/10, r.pulseCh) {
-			return
-		}
-		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
-			r.raft.logger.Error("failed to heartbeat to", "peer", r.addr, "error", err)
-			backoff.next()
-			continue
-		}
-		backoff.reset()
-	}
+func (r *peerReplication) runPipeline() {
+
+}
+
+func (r *peerReplication) pipelineReplicate() {
+
 }
 
 // require caller holds lock
