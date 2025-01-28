@@ -280,13 +280,14 @@ func (r *peerReplication) receivePipelineResponses() {
 	for {
 		select {
 		case pending := <-r.pipeline.pendingCh:
-			err = r.pipeline.readResponse(pending.resp)
+			resp := pending.resp
+			err = r.pipeline.readResponse(resp)
 			if err != nil {
 				r.pipeline.stop.Close() // anything else?
 				return
 			}
 			// calling it pending is not true anymore!????
-			if term := pending.resp.Term; term > r.currentTerm {
+			if term := resp.Term; term > r.currentTerm {
 				<-r.raft.dispatchTransition(followerStateType, term)
 			}
 		case <-r.pipeline.stop.Ch():
