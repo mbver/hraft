@@ -21,7 +21,7 @@ type peerReplication struct {
 	// shouldPreparePipeline is switched on
 	// when leader successfully replicate logs to follower
 	// and switch off when pipeline is already running
-	shoulPreparePipline bool
+	shouldSwitchToPipeline bool
 	// reference to replication pipeline in pipeline mode
 	pipeline *replicationPipeline
 	// extracted from raft config for convenient use
@@ -87,7 +87,7 @@ func (r *peerReplication) run() {
 		return
 	}
 	defer r.raft.wg.Done()
-	// Start an async heartbeating routing
+	// heartbeat is run in another thread
 	go r.heartbeat()
 	for {
 		if !r.waitForIntervalOrSignals(r.commitSyncInterval, r.logAddedCh) {
@@ -102,8 +102,8 @@ func (r *peerReplication) run() {
 			return
 		}
 		r.replicate()
-		if r.shoulPreparePipline {
-			r.shoulPreparePipline = false
+		if r.shouldSwitchToPipeline {
+			r.shouldSwitchToPipeline = false
 			if !r.stepdown.IsClosed() && !tryGetNotify(r.stopCh) {
 				r.runPipeline()
 			}
@@ -129,7 +129,7 @@ func (r *peerReplication) heartbeat() {
 			return
 		}
 		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
-			r.raft.logger.Error("failed to heartbeat to", "peer", r.addr, "error", err)
+			r.raft.logger.Error("heartbeat: transport append_entries failed", "peer", r.addr, "error", err)
 			backoff.next()
 			continue
 		}
@@ -173,7 +173,7 @@ func (r *peerReplication) replicate() {
 		}
 		res := &AppendEntriesResponse{}
 		if err = r.raft.transport.AppendEntries(r.addr, req, res); err != nil {
-			r.raft.logger.Error("transport append_entries failed", "peer", r.addr, "error", err)
+			r.raft.logger.Error("replicate: transport append_entries failed", "peer", r.addr, "error", err)
 			r.backoff.next()
 			r.waitForBackoff(r.backoff)
 			return
@@ -193,7 +193,7 @@ func (r *peerReplication) replicate() {
 				r.updateMatchIdx(r.addr, lastEntry.Idx)
 			}
 			if r.getNextIdx() > uptoIdx {
-				r.shoulPreparePipline = true
+				r.shouldSwitchToPipeline = true
 				break
 			}
 			if r.stepdown.IsClosed() {
@@ -283,7 +283,7 @@ func (r *peerReplication) runPipeline() {
 		r.raft.logger.Error("failed to create replication pipeline", "peer", r.addr, "error", err)
 		return
 	}
-	r.pipeline = pipe // need lock? may be not?
+	r.pipeline = pipe
 	defer pipe.Close()
 	r.raft.logger.Info("enter pipeline replication mode", "peer", r.addr)
 	defer r.raft.logger.Info("exit pipeline replication mode", "peer", r.addr)
@@ -309,7 +309,12 @@ func (r *peerReplication) runPipeline() {
 		}
 	}
 	if err != nil {
-		r.raft.logger.Error("error running pipeline", "peer", r.addr, "error", err)
+		r.raft.logger.Error("error running pipeline",
+			"peer", r.addr,
+			"error", err,
+			"stepdown", r.stepdown.IsClosed(),
+			"stop", tryGetNotify(r.stopCh),
+		)
 	}
 	r.pipeline.Close()
 	select {
