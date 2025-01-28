@@ -420,7 +420,7 @@ var ErrPipelineClosed = errors.New("pipeline is closed")
 type pendingResponse struct {
 	req  *AppendEntriesRequest
 	resp *AppendEntriesResponse
-	err  error
+	err  error // WE MAY NOT NEED ERROR?
 }
 
 func newPendingResponse(req *AppendEntriesRequest) *pendingResponse {

@@ -18,6 +18,10 @@ type peerReplication struct {
 	updateMatchIdx func(string, uint64)
 	// reference to the leader's Raft
 	raft *Raft
+	// shouldPreparePipeline is switched on
+	// when leader successfully replicate logs to follower
+	// and switch off when pipeline is already running
+	shoulPreparePipline bool
 	// reference to replication pipeline in pipeline mode
 	pipeline *replicationPipeline
 	// extracted from raft config for convenient use
@@ -98,6 +102,12 @@ func (r *peerReplication) run() {
 			return
 		}
 		r.replicate()
+		if r.shoulPreparePipline {
+			r.shoulPreparePipline = false
+			if !r.stepdown.IsClosed() && !tryGetNotify(r.stopCh) {
+				r.runPipeline()
+			}
+		}
 	}
 }
 
@@ -177,12 +187,16 @@ func (r *peerReplication) replicate() {
 		}
 		if res.Success {
 			r.backoff.reset()
-			if len(req.Entries) > 0 {
-				lastEntry := req.Entries[len(req.Entries)-1]
+			if len(entries) > 0 {
+				lastEntry := req.Entries[len(entries)-1]
 				r.setNextIdx(lastEntry.Idx + 1)
 				r.updateMatchIdx(r.addr, lastEntry.Idx)
 			}
-			if r.getNextIdx() > uptoIdx || r.stepdown.IsClosed() {
+			if r.getNextIdx() > uptoIdx {
+				r.shoulPreparePipline = true
+				break
+			}
+			if r.stepdown.IsClosed() {
 				break
 			}
 			continue
@@ -195,6 +209,7 @@ func (r *peerReplication) replicate() {
 		if !res.PrevLogCheckFailed {
 			r.backoff.next()
 		}
+
 		// in the case leader is removed
 		// we expect last replication will update leader-commit
 		// and applied new membership to followers
@@ -258,6 +273,11 @@ func (r *peerReplication) sendLatestSnapshot() error {
 }
 
 func (r *peerReplication) runPipeline() {
+	if !r.raft.wg.Add(1) {
+		return
+	}
+	defer r.raft.wg.Done()
+
 	pipe, err := newReplicationPipeline(r.addr, r.raft.transport)
 	if err != nil {
 		r.raft.logger.Error("failed to create replication pipeline", "peer", r.addr, "error", err)
@@ -265,34 +285,36 @@ func (r *peerReplication) runPipeline() {
 	}
 	r.pipeline = pipe // need lock? may be not?
 	defer pipe.Close()
+	r.raft.logger.Info("enter pipeline replication mode", "peer", r.addr)
+	defer r.raft.logger.Info("exit pipeline replication mode", "peer", r.addr)
 	go r.receivePipelineResponses()
-	for {
-		select {}
-	}
-}
 
-func (r *peerReplication) receivePipelineResponses() {
-	if !r.raft.wg.Add(1) {
-		return
-	}
-	defer r.raft.wg.Done()
-	var err error
-	for {
+	stopped := false
+	for err == nil && !stopped {
 		select {
-		case pending := <-r.pipeline.pendingCh:
-			resp := pending.resp
-			err = r.pipeline.readResponse(resp)
-			if err != nil {
-				r.pipeline.stop.Close() // anything else?
-				return
-			}
-			// calling it pending is not true anymore!????
-			if term := resp.Term; term > r.currentTerm {
-				<-r.raft.dispatchTransition(followerStateType, term)
-			}
-		case <-r.pipeline.stop.Ch():
-			return // Error?
+		case <-r.pipeline.doneCh:
+			stopped = true
+		case <-r.logAddedCh:
+			err = r.pipelineReplicate()
+		case <-time.After(r.commitSyncInterval):
+			err = r.pipelineReplicate()
+		case <-r.stopCh:
+			err = r.pipelineReplicate()
+			stopped = true
+		case <-r.stepdown.Ch():
+			err = r.pipelineReplicate()
+			stopped = true
+		case <-r.raft.shutdownCh():
+			stopped = true
 		}
+	}
+	if err != nil {
+		r.raft.logger.Error("error running pipeline", "peer", r.addr, "error", err)
+	}
+	r.pipeline.Close()
+	select {
+	case <-r.pipeline.doneCh:
+	case <-r.raft.shutdownCh():
 	}
 }
 
@@ -320,6 +342,54 @@ func (r *peerReplication) pipelineReplicate() error {
 		}
 		if err := r.pipeline.sendRequest(req); err != nil {
 			return err
+		}
+		if len(entries) > 0 {
+			lastEntry := entries[len(entries)-1]
+			nextIdx = lastEntry.Idx + 1
+			r.setNextIdx(nextIdx)
+		}
+		if r.getNextIdx() > uptoIdx || r.stepdown.IsClosed() {
+			return nil
+		}
+	}
+}
+
+func (r *peerReplication) receivePipelineResponses() {
+	if !r.raft.wg.Add(1) {
+		return
+	}
+	defer r.raft.wg.Done()
+	defer close(r.pipeline.doneCh)
+	var err error
+	for {
+		select {
+		case pending := <-r.pipeline.pendingCh:
+			req, resp := pending.req, pending.resp
+			err = r.pipeline.readResponse(resp)
+			if err != nil {
+				r.raft.logger.Error("failed to read pipeline response", "peer", r.addr, "error", err)
+				return
+			}
+			if resp.Term > r.currentTerm {
+				if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
+					r.stepdown.Close()
+					<-r.raft.dispatchTransition(followerStateType, resp.Term)
+				}
+				return
+			}
+			if !resp.Success {
+				return
+			}
+			if len(req.Entries) > 0 {
+				lastEntry := req.Entries[len(req.Entries)-1]
+				r.setNextIdx(lastEntry.Idx + 1)
+				r.updateMatchIdx(r.addr, lastEntry.Idx)
+			}
+		// pipeline's stopCh is notified in the case of
+		// prepare/send requests failures or
+		// stop replication, leader stepdown or raft shutdown
+		case <-r.pipeline.stop.Ch():
+			return // Error?
 		}
 	}
 }
