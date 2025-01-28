@@ -30,11 +30,11 @@ func TestRaft_AfterShutdown(t *testing.T) {
 	require.Nil(t, err)
 	c.close()
 
-	raft := c.rafts[0]
-	err = <-raft.Apply(nil, 0)
+	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	leader := c.getNodesByState(leaderStateType)[0]
+	err = <-leader.Apply(nil, 0)
 	require.Equal(t, ErrRaftShutdown, err)
-
-	err = raft.AddVoter("127.0.0.1:7946", 0)
+	err = leader.AddVoter("127.0.0.1:7946", 0)
 	require.Equal(t, ErrRaftShutdown, err)
 }
 
@@ -133,7 +133,10 @@ func TestRaft_RemoveFollower(t *testing.T) {
 	require.Equal(t, RoleAbsent, leader.membership.getPeer(follower0.ID()))
 
 	c.remove(follower0.ID())
-	defer follower0.Shutdown()
+	defer func() {
+		follower0.Shutdown()
+		c.wg.Done()
+	}()
 	consistent, msg := c.isConsistent()
 	require.True(t, consistent, msg)
 }
@@ -161,7 +164,11 @@ func TestRaft_Remove_Rejoin_Follower(t *testing.T) {
 	require.Equal(t, RoleAbsent, leader.membership.getPeer(follower0.ID()))
 
 	c.remove(follower0.ID())
-	defer follower0.Shutdown()
+	defer func() {
+		follower0.Shutdown()
+		c.wg.Done()
+	}()
+
 	consistent, msg := c.isConsistent()
 	require.True(t, consistent, msg)
 

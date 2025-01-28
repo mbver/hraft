@@ -93,7 +93,7 @@ func (r *peerReplication) run() {
 		if !r.waitForIntervalOrSignals(r.commitSyncInterval, r.logAddedCh) {
 			if !tryGetNotify(r.raft.shutdownCh()) {
 				r.raft.logger.Info(
-					"last replication",
+					"stop running replication, last replication to",
 					"peer", r.addr,
 					"stepdown", r.stepdown.IsClosed(),
 				)

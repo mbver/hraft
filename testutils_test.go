@@ -136,23 +136,18 @@ func defaultTestConfig() *Config {
 
 type cluster struct {
 	wg            sync.WaitGroup
-	rafts         []*Raft
+	rafts         map[string]*Raft
 	closed        bool
 	connGetterMap map[string]*BlockableConnGetter
 }
 
 func (c *cluster) add(raft *Raft) {
-	c.rafts = append(c.rafts, raft)
+	c.rafts[raft.ID()] = raft
 	c.wg.Add(1)
 }
 
 func (c *cluster) remove(addr string) {
-	for i, raft := range c.rafts {
-		if raft.ID() == addr {
-			c.rafts = append(c.rafts[:i], c.rafts[i+1:]...)
-			c.wg.Done()
-		}
-	}
+	delete(c.rafts, addr)
 }
 
 func (c *cluster) getConnGetter(addr string) *BlockableConnGetter {
@@ -178,6 +173,13 @@ func (c *cluster) partition(addrs ...string) {
 				c.disconnect(addr0, addr1)
 			}
 		}
+	}
+	for _, addr := range addrs {
+		r := c.rafts[addr]
+		r.logger.Debug("[PARTITION], closed all received conns", "id", r.ID())
+		// this is to stop the running pipeline and force leader
+		// to switch back to replicate mode and use the blocked ConnGetter
+		r.transport.ClearReceivedConns()
 	}
 }
 
@@ -316,10 +318,16 @@ func dumpState(raft *Raft) {
 
 func (c *cluster) isConsistent() (bool, string) {
 	sleep()
-	first := c.rafts[0]
-	first.logger.Info("==================== checking for consistency =======================")
-	firstCommands := getRecordCommandState(first)
-	for _, raft := range c.rafts[1:] {
+	isFirst := true
+	var first *Raft
+	var firstCommands []*Log
+	for _, raft := range c.rafts {
+		if isFirst {
+			isFirst = false
+			first = raft
+			firstCommands = getRecordCommandState(raft)
+			continue
+		}
 		state := getRecordCommandState(raft)
 		if !compareStates(firstCommands, state) {
 			return false,
@@ -331,7 +339,10 @@ func (c *cluster) isConsistent() (bool, string) {
 		}
 	}
 	firstMembership := getRecordMembershipState(first)
-	for _, raft := range c.rafts[1:] {
+	for id, raft := range c.rafts {
+		if id == first.ID() {
+			continue
+		}
 		state := getRecordMembershipState(raft)
 		if !compareStates(firstMembership, state) {
 			return false,
@@ -343,16 +354,6 @@ func (c *cluster) isConsistent() (bool, string) {
 		}
 	}
 	return true, ""
-}
-
-func logsToString(logs []*Log) string {
-	buf := strings.Builder{}
-	buf.WriteRune('[')
-	for _, log := range logs {
-		buf.WriteString(fmt.Sprintf("{%d, %d, %s},", log.Term, log.Idx, log.Type.String()))
-	}
-	buf.WriteRune(']')
-	return buf.String()
 }
 
 type recordCommandState struct {
@@ -521,6 +522,7 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 		addresses[i] = addrSource.next()
 	}
 	cluster := &cluster{
+		rafts:         map[string]*Raft{},
 		connGetterMap: map[string]*BlockableConnGetter{},
 	}
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
