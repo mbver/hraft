@@ -11,17 +11,17 @@ import (
 )
 
 type Leader struct {
-	term           uint64
-	l              sync.Mutex
-	raft           *Raft
-	active         bool
-	commit         *commitControl
-	inflight       *inflight
-	replicationMap map[string]*peerReplication
-	staging        *staging
-	transferring   atomic.Bool
-	verifyReqCh    chan struct{}
-	stepdown       *ResetableProtectedChan
+	term                 uint64
+	l                    sync.Mutex
+	raft                 *Raft
+	active               bool
+	commit               *commitControl
+	inflight             *inflight
+	replicationMap       map[string]*peerReplication
+	staging              *staging
+	inLeadershipTransfer atomic.Bool
+	verifyReqCh          chan struct{}
+	stepdown             *ResetableProtectedChan
 }
 
 func NewLeader(r *Raft) *Leader {
@@ -201,7 +201,11 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 }
 
 func (l *Leader) HandleApply(a *Apply) {
-	// TODO: check leadership transfer?
+	if l.inLeadershipTransfer.Load() {
+		l.raft.logger.Debug("ignoring an apply request. leadership is transferring...")
+		a.errCh <- ErrLeadershipTransferring
+		return
+	}
 	batchSize := l.raft.config.MaxAppendEntries
 	batch := make([]*Apply, 0, batchSize)
 	batch = append(batch, a)
@@ -218,7 +222,11 @@ func (l *Leader) HandleApply(a *Apply) {
 }
 
 func (l *Leader) HandleMembershipChange(change *membershipChange) {
-	// TODO: check for leadership transfer?
+	if l.inLeadershipTransfer.Load() {
+		l.raft.logger.Debug("ignoring a membership change request. leadership transferring...")
+		change.errCh <- ErrLeadershipTransferring
+		return
+	}
 	if !l.raft.membership.isStable() {
 		trySend(change.errCh, ErrMembershipUnstable)
 		return
@@ -271,6 +279,11 @@ func (l *Leader) stepdownOrShutdown() error {
 var ErrAbortedByRestore = errors.New("abort inflight by restore")
 
 func (l *Leader) HandleRestoreRequest(req *userRestoreRequest) {
+	if l.inLeadershipTransfer.Load() {
+		l.raft.logger.Debug("ignoring a user restore request. leadership transferring...")
+		req.errCh <- ErrLeadershipTransferring
+		return
+	}
 	err := l.restoreSnapshot(req.meta, req.source)
 	req.errCh <- err
 }
@@ -343,12 +356,12 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 var ErrLeadershipTransferring = errors.New("leader is transferring")
 
 func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
-	if l.transferring.Load() {
+	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring leadership transfer request. leadership transfer is in progress")
 		trySend(req.errCh, ErrLeadershipTransferring)
 		return
 	}
-	l.transferring.Store(true)
+	l.inLeadershipTransfer.Store(true)
 	if req.addr == l.raft.ID() {
 		trySend(req.errCh, fmt.Errorf("leader %s can not transfer leadership to itself", l.raft.ID()))
 		return
@@ -357,7 +370,7 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 		req.addr = l.mostCurrentFollower()
 	}
 	go func() {
-		defer l.transferring.Store(false)
+		defer l.inLeadershipTransfer.Store(false)
 		l.l.Lock()
 		repl, ok := l.replicationMap[req.addr]
 		defer l.l.Unlock()
