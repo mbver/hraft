@@ -338,3 +338,7 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	l.raft.instate.setLastSnapshot(lastIdx, term)
 	return nil
 }
+
+func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
+
+}

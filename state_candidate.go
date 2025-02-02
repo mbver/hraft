@@ -75,6 +75,10 @@ func (c *Candidate) HandleRestoreRequest(req *userRestoreRequest) {
 	trySend(req.errCh, ErrNotLeader)
 }
 
+func (c *Candidate) HandleLeadershipTransfer(req *leadershipTransfer) {
+	trySend(req.errCh, ErrNotLeader)
+}
+
 type voteResult struct {
 	VoterId  string
 	Response *VoteResponse

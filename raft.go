@@ -58,31 +58,33 @@ type State interface {
 	HandleCommitNotify()
 	HandleMembershipChange(*membershipChange)
 	HandleRestoreRequest(*userRestoreRequest)
+	HandleLeadershipTransfer(*leadershipTransfer)
 }
 
 type Raft struct {
-	config             *Config
-	logger             hclog.Logger
-	appstate           *AppState
-	membership         *membership
-	instate            *internalState
-	state              RaftStateType
-	stateMap           map[RaftStateType]State
-	logs               LogStore
-	kvs                KVStore
-	snapstore          *SnapshotStore
-	transport          *NetTransport
-	heartbeatCh        chan *RPC
-	rpchCh             chan *RPC
-	applyCh            chan *Apply
-	commitNotifyCh     chan struct{}
-	membershipChangeCh chan *membershipChange
-	transitionCh       chan *Transition
-	snapshotReqCh      chan *userSnapshotRequest
-	restoreReqCh       chan *userRestoreRequest
-	heartbeatTimeout   *heartbeatTimeout
-	wg                 *ProtectedWaitGroup
-	shutdown           *ProtectedChan
+	config               *Config
+	logger               hclog.Logger
+	appstate             *AppState
+	membership           *membership
+	instate              *internalState
+	state                RaftStateType
+	stateMap             map[RaftStateType]State
+	logs                 LogStore
+	kvs                  KVStore
+	snapstore            *SnapshotStore
+	transport            *NetTransport
+	heartbeatCh          chan *RPC
+	rpchCh               chan *RPC
+	applyCh              chan *Apply
+	commitNotifyCh       chan struct{}
+	membershipChangeCh   chan *membershipChange
+	leadershipTransferCh chan *leadershipTransfer
+	transitionCh         chan *Transition
+	snapshotReqCh        chan *userSnapshotRequest
+	restoreReqCh         chan *userRestoreRequest
+	heartbeatTimeout     *heartbeatTimeout
+	wg                   *ProtectedWaitGroup
+	shutdown             *ProtectedChan
 }
 
 func (r *Raft) Shutdown() {
@@ -110,6 +112,8 @@ func (r *Raft) receiveMsgs() {
 			r.getState().HandleCommitNotify()
 		case change := <-r.membershipChangeCh:
 			r.getState().HandleMembershipChange(change)
+		case transfer := <-r.leadershipTransferCh:
+			r.getState().HandleLeadershipTransfer(transfer)
 		case req := <-r.restoreReqCh:
 			r.getState().HandleRestoreRequest(req)
 		case <-r.heartbeatTimeout.getCh():

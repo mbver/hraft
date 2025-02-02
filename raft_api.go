@@ -163,3 +163,9 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 	}
 	return drainErr(noOp.errCh, timeoutCh, r.shutdownCh())
 }
+
+type leadershipTransfer struct {
+	errCh chan error
+}
+
+func (r *Raft) TransferLeader() {}

@@ -56,3 +56,7 @@ func (f *Follower) HandleMembershipChange(change *membershipChange) {
 func (f *Follower) HandleRestoreRequest(req *userRestoreRequest) {
 	trySend(req.errCh, ErrNotLeader)
 }
+
+func (f *Follower) HandleLeadershipTransfer(req *leadershipTransfer) {
+	trySend(req.errCh, ErrNotLeader)
+}
