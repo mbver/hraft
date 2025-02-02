@@ -304,10 +304,11 @@ func (m *membership) newPeersFromChange(change *membershipChange) ([]*Peer, erro
 	case demotePeer:
 		for _, p := range latest {
 			if p.ID == change.addr && p.Role == RoleVoter {
-				p.Role = RoleVoter
+				p.Role = RoleNonVoter
 				return latest, nil
 			}
 		}
+		return nil, fmt.Errorf("peer %s is absent or not a voter", change.addr)
 	case removePeer:
 		for i, p := range latest {
 			if p.ID == change.addr {

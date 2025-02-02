@@ -323,6 +323,25 @@ func TestRaft_RemoveUnknownPeer(t *testing.T) {
 	require.Contains(t, err.Error(), "unable to find peer")
 }
 
+func TestRaft_DemoteVoter(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	follower0 := c.getNodesByState(followerStateType)[0]
+	err = leader.DemoteVoter(follower0.ID(), 0)
+	require.Nil(t, err)
+	voters := leader.Voters()
+	for _, v := range voters {
+		require.NotEqual(t, follower0.ID(), v)
+	}
+	voters = follower0.Voters()
+	for _, v := range voters {
+		require.NotEqual(t, follower0.ID(), v)
+	}
+}
 func TestRaft_VerifyLeader(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster(3, nil)
