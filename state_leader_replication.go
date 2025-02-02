@@ -376,6 +376,7 @@ func (r *peerReplication) receivePipelineResponses() {
 				return
 			}
 			if resp.Term > r.currentTerm {
+				r.raft.logger.Info("pipeline response: receiving higher term", "current", r.currentTerm, "received", resp.Term)
 				if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
 					r.stepdown.Close()
 					<-r.raft.dispatchTransition(followerStateType, resp.Term)
@@ -383,6 +384,7 @@ func (r *peerReplication) receivePipelineResponses() {
 				return
 			}
 			if !resp.Success {
+				r.raft.logger.Info("pipeline response: unsuccessful")
 				return
 			}
 			if len(req.Entries) > 0 {
@@ -394,7 +396,7 @@ func (r *peerReplication) receivePipelineResponses() {
 		// prepare/send requests failures or
 		// stop replication, leader stepdown or raft shutdown
 		case <-r.pipeline.stop.Ch():
-			return // Error?
+			return
 		}
 	}
 }

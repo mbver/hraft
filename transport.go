@@ -414,9 +414,9 @@ func (t *NetTransport) listen() {
 
 var ErrPipelineClosed = errors.New("pipeline is closed")
 
-// pending response is queued when an AppendEntriesRequest
-// is sent over pipeline. when response arrived, it will be received
-// and stored in the waiting item.
+// pending response is queued in pendingCh when an AppendEntriesRequest
+// is sent over pipeline. it is used to wait for response from
+// the follower.
 type pendingResponse struct {
 	req  *AppendEntriesRequest
 	resp *AppendEntriesResponse
