@@ -24,6 +24,7 @@ type msgType uint8
 const (
 	appendEntriesMsgType = iota
 	requestVoteMsgType
+	candidateNowMsgType
 	installSnapshotMsgType
 	timeoutNowMsgType
 )
@@ -82,6 +83,10 @@ type InstallSnapshotResponse struct {
 	Term    uint64
 	Success bool
 }
+
+type CandidateNowRequest struct{}
+
+type CandidateNowResponse struct{}
 
 type RpcResponse struct {
 	Response interface{}
@@ -192,8 +197,8 @@ func NewNetTransport(config *NetTransportConfig, logger hclog.Logger, connGetter
 		connPool:      map[string][]*peerConn{},
 		receivedConns: map[net.Conn]struct{}{},
 		listener:      l,
-		heartbeatCh:   make(chan *RPC), // ======= do we buffer? do we create in raft and use here? or create here and use in raft?
-		rpcCh:         make(chan *RPC), // ======= do we buffer?
+		heartbeatCh:   make(chan *RPC),
+		rpcCh:         make(chan *RPC),
 	}
 	if connGetter == nil {
 		connGetter = &TransparentConnGetter{}
@@ -218,6 +223,10 @@ func (t *NetTransport) AppendEntries(addr string, req *AppendEntriesRequest, res
 
 func (t *NetTransport) RequestVote(addr string, req *VoteRequest, res *VoteResponse) error {
 	return t.unaryRPC(addr, requestVoteMsgType, req, res)
+}
+
+func (t *NetTransport) CandidateNow(addr string, req *CandidateNowRequest, res *CandidateNowResponse) error {
+	return t.unaryRPC(addr, candidateNowMsgType, req, res)
 }
 
 func (t *NetTransport) unaryRPC(addr string, mType msgType, req interface{}, res interface{}) error {
@@ -534,10 +543,10 @@ func (t *NetTransport) handleMessage(r *bufio.Reader, dec *codec.Decoder, enc *c
 		return t.handleAppendEntries(dec, enc)
 	case requestVoteMsgType:
 		return t.handleRequestVote(dec, enc)
+	case candidateNowMsgType:
+		return t.handleCandidateNow(dec, enc)
 	case installSnapshotMsgType:
 		return t.handleInstallSnapshot(r, dec, enc)
-	case timeoutNowMsgType:
-		return t.handleRpcTimeoutNow(dec, enc)
 	}
 	return fmt.Errorf("unknown msg type %s", mType)
 }
@@ -564,6 +573,15 @@ func (t *NetTransport) handleAppendEntries(dec *codec.Decoder, enc *codec.Encode
 
 func (t *NetTransport) handleRequestVote(dec *codec.Decoder, enc *codec.Encoder) error {
 	var req VoteRequest
+	if err := dec.Decode(&req); err != nil {
+		return err
+	}
+	rpc := newRPC(&req)
+	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.closed.Ch())
+}
+
+func (t *NetTransport) handleCandidateNow(dec *codec.Decoder, enc *codec.Encoder) error {
+	var req CandidateNowRequest
 	if err := dec.Decode(&req); err != nil {
 		return err
 	}

@@ -19,6 +19,7 @@ type Leader struct {
 	inflight       *inflight
 	replicationMap map[string]*peerReplication
 	staging        *staging
+	transferring   atomic.Bool
 	verifyReqCh    chan struct{}
 	stepdown       *ResetableProtectedChan
 }
@@ -339,6 +340,48 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	return nil
 }
 
-func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
+var ErrLeadershipTransferring = errors.New("leader is transferring")
 
+func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
+	if l.transferring.Load() {
+		l.raft.logger.Debug("ignoring leadership transfer request. leadership transfer is in progress")
+		trySend(req.errCh, ErrLeadershipTransferring)
+		return
+	}
+	l.transferring.Store(true)
+	if req.addr == l.raft.ID() {
+		trySend(req.errCh, fmt.Errorf("leader %s can not transfer leadership to itself", l.raft.ID()))
+		return
+	}
+	if req.addr == "" {
+		req.addr = l.mostCurrentFollower()
+	}
+	go func() {
+		defer l.transferring.Store(false)
+		l.l.Lock()
+		repl, ok := l.replicationMap[req.addr]
+		defer l.l.Unlock()
+		if !ok {
+			trySend(req.errCh, fmt.Errorf("peer replication for %s not found", req.addr))
+			return
+		}
+		errCh := make(chan error)
+		repl.forceReplicateCh <- errCh
+		err := <-errCh
+		if err != nil {
+			trySend(req.errCh, err)
+			return
+		}
+		lastIdx, _ := l.raft.instate.getLastIdxTerm()
+		if lastIdx >= repl.getNextIdx() {
+			trySend(req.errCh, fmt.Errorf("unable to force replication to latest lastIdx=%d, nextIdx=%d", lastIdx, repl.getNextIdx()))
+			return
+		}
+		err = l.raft.transport.CandidateNow(req.addr, &CandidateNowRequest{}, &CandidateNowResponse{})
+		trySend(req.errCh, err)
+	}()
+}
+
+func (l *Leader) mostCurrentFollower() string {
+	return ""
 }

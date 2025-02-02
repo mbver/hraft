@@ -21,6 +21,8 @@ func (r *Raft) handleRPC(rpc *RPC) {
 		r.handleAppendEntries(rpc, req)
 	case *VoteRequest:
 		r.handleRequestVote(rpc, req)
+	case *CandidateNowRequest:
+		r.handleCandidateNow(rpc, req)
 	case *InstallSnapshotRequest:
 		r.handleInstallSnapshot(rpc, req)
 	default:
@@ -380,6 +382,11 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 	r.heartbeatTimeout.reset()
 }
 
+func (r *Raft) handleCandidateNow(rpc *RPC, _ *CandidateNowRequest) {
+	<-r.dispatchTransition(candidateStateType, r.getTerm()+1)
+	rpc.respCh <- &CandidateNowResponse{}
+}
+
 func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
 	currentTerm := r.getTerm()
 	resp := &InstallSnapshotResponse{
@@ -470,6 +477,7 @@ func (r *Raft) hasExistingState() (bool, error) {
 
 func sendToRaft[T *Apply |
 	*membershipChange |
+	*leadershipTransfer |
 	*userSnapshotRequest |
 	*userRestoreRequest](
 	ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{},

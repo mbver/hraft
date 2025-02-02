@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+const (
+	pipelineDrainTimeout = 300 * time.Millisecond
+)
+
 type peerReplication struct {
 	// currentTerm is the term of this leader, to be included in AppendEntries
 	// requests.
@@ -29,6 +33,8 @@ type peerReplication struct {
 	heartbeatTimeout   time.Duration
 	// logAddedCh is notified every time new entries are appended to the log.
 	logAddedCh chan struct{}
+	// forceReplicateCh is notified during leadership transfer
+	forceReplicateCh chan chan error
 	// trigger a heartbeat immediately
 	pulseCh chan struct{}
 	// leader's stepdown control
@@ -49,21 +55,21 @@ func (r *peerReplication) setNextIdx(idx uint64) {
 	atomic.StoreUint64(&r.nextIdx, idx)
 }
 
-// wait for signals fires from timeCh or sigCh until the replication is stopped.
-// if replication is stopped, return false to signify waiting goro to stop too.
-func (r *peerReplication) waitForIntervalOrSignals(interval time.Duration, sigCh chan struct{}) (gotSignal bool) {
-	timeoutCh := jitterTimeoutCh(interval)
+func (r *peerReplication) waitForReplicationTrigger() (gotSignal bool, errCh chan error) {
+	timeoutCh := jitterTimeoutCh(r.commitSyncInterval)
 	select {
 	case <-timeoutCh:
-		return true
-	case <-sigCh:
-		return true
+		return true, nil
+	case <-r.logAddedCh:
+		return true, nil
+	case errCh = <-r.forceReplicateCh:
+		return true, errCh
 	case <-r.stopCh:
-		return false
+		return false, nil
 	case <-r.stepdown.Ch():
-		return false
+		return false, nil
 	case <-r.raft.shutdownCh():
-		return false
+		return false, nil
 	}
 }
 
@@ -90,7 +96,8 @@ func (r *peerReplication) run() {
 	// heartbeat is run in another thread
 	go r.heartbeat()
 	for {
-		if !r.waitForIntervalOrSignals(r.commitSyncInterval, r.logAddedCh) {
+		gotSignal, errCh := r.waitForReplicationTrigger()
+		if !gotSignal {
 			if !tryGetNotify(r.raft.shutdownCh()) {
 				r.raft.logger.Info(
 					"stop running replication, last replication to",
@@ -101,13 +108,33 @@ func (r *peerReplication) run() {
 			}
 			return
 		}
-		r.replicate()
+		err := r.replicate()
+		trySend(errCh, err)
+		if err != nil {
+			continue
+		}
 		if r.shouldSwitchToPipeline {
 			r.shouldSwitchToPipeline = false
 			if !r.stepdown.IsClosed() && !tryGetNotify(r.stopCh) {
 				r.runPipeline()
 			}
 		}
+	}
+}
+
+func (r *peerReplication) waitForHearbeatTrigger() (gotSignal bool) {
+	timeoutCh := jitterTimeoutCh(r.heartbeatTimeout / 10)
+	select {
+	case <-timeoutCh:
+		return true
+	case <-r.pulseCh:
+		return true
+	case <-r.stopCh:
+		return false
+	case <-r.stepdown.Ch():
+		return false
+	case <-r.raft.shutdownCh():
+		return false
 	}
 }
 
@@ -125,7 +152,7 @@ func (r *peerReplication) heartbeat() {
 			return
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
-		if !r.waitForIntervalOrSignals(r.heartbeatTimeout/10, r.pulseCh) {
+		if !r.waitForHearbeatTrigger() {
 			return
 		}
 		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
@@ -137,7 +164,7 @@ func (r *peerReplication) heartbeat() {
 	}
 }
 
-func (r *peerReplication) replicate() {
+func (r *peerReplication) replicate() error {
 	uptoIdx, _ := r.raft.getLastLog()
 	<-jitterTimeoutCh(r.heartbeatTimeout / 10)
 	var nextIdx uint64
@@ -146,21 +173,21 @@ func (r *peerReplication) replicate() {
 		entries, err := r.raft.getEntries(nextIdx, uptoIdx)
 		if err != nil && err != ErrLogNotFound {
 			r.raft.logger.Error("failed to get entries", "from", nextIdx, "to", uptoIdx, "error", err)
-			return
+			return err
 		}
 		if err == ErrLogNotFound {
 			err = r.sendLatestSnapshot()
 			if err != nil {
 				r.raft.logger.Error("failed to install latest snapshot", "error", err)
 				r.waitForBackoff(r.backoff)
-				return
+				return err
 			}
 			continue
 		}
 		prevIdx, prevTerm, err := r.raft.getPrevLog(nextIdx)
 		if err != nil {
 			r.raft.logger.Error("failed to get prevlog", "error", err)
-			return
+			return err
 		}
 
 		req := &AppendEntriesRequest{
@@ -176,14 +203,14 @@ func (r *peerReplication) replicate() {
 			r.raft.logger.Error("replicate: transport append_entries failed", "peer", r.addr, "error", err)
 			r.backoff.next()
 			r.waitForBackoff(r.backoff)
-			return
+			return err
 		}
 		if res.Term > r.currentTerm {
 			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
 				r.stepdown.Close() // stop all replication
 				<-r.raft.dispatchTransition(followerStateType, res.Term)
 			}
-			return
+			return err
 		}
 		if res.Success {
 			r.backoff.reset()
@@ -215,13 +242,14 @@ func (r *peerReplication) replicate() {
 		// and applied new membership to followers
 		// so this wait has to be put at the end of loop
 		if !r.waitForBackoff(r.backoff) {
-			return
+			return fmt.Errorf("raft shutdown or leader stepdown")
 		}
 	}
 	if r.onStage {
 		tryNotify(r.logSyncCh)
 		r.onStage = false
 	}
+	return nil
 }
 
 func (r *peerReplication) sendLatestSnapshot() error {
@@ -272,6 +300,26 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	return fmt.Errorf("installSnapshot rejected peer=%s", r.addr)
 }
 
+// chan bool might be an overkill
+// it is inefficient to reuse this
+// in replicate and pipeline loops
+func (r *peerReplication) waitForTimeout(timeout time.Duration) chan bool {
+	ch := make(chan bool, 1)
+	go func() {
+		select {
+		case <-time.After(timeout):
+			ch <- true
+		case <-r.stopCh:
+			ch <- false
+		case <-r.stepdown.Ch():
+			ch <- false
+		case <-r.raft.shutdownCh():
+			ch <- false
+		}
+	}()
+	return ch
+}
+
 func (r *peerReplication) runPipeline() {
 	if !r.raft.wg.Add(1) {
 		return
@@ -296,6 +344,13 @@ func (r *peerReplication) runPipeline() {
 			stopped = true
 		case <-r.logAddedCh:
 			err = r.pipelineReplicate()
+		case errCh := <-r.forceReplicateCh:
+			// exit pipeline mode and trigger replicate again
+			// to make sure error are handled correctly
+			r.forceReplicateCh <- errCh
+			r.pipelineReplicate()
+			<-r.waitForTimeout(pipelineDrainTimeout) // wait while pipeline responses draining
+			stopped = true
 		case <-time.After(r.commitSyncInterval):
 			err = r.pipelineReplicate()
 		case <-r.stopCh:
@@ -426,6 +481,7 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		addr:               addr,
 		updateMatchIdx:     l.commit.updateMatchIdx,
 		logAddedCh:         make(chan struct{}, 1),
+		forceReplicateCh:   make(chan chan error, 1),
 		currentTerm:        l.raft.getTerm(),
 		nextIdx:            lastIdx + 1,
 		stepdown:           l.stepdown,

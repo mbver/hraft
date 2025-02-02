@@ -165,7 +165,29 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 }
 
 type leadershipTransfer struct {
+	addr  string
 	errCh chan error
 }
 
-func (r *Raft) TransferLeader() {}
+func newLeadershipTransfer(addr string) *leadershipTransfer {
+	return &leadershipTransfer{
+		addr:  addr,
+		errCh: make(chan error, 1),
+	}
+}
+
+func (r *Raft) TransferLeader(addr string, timeout time.Duration) error {
+	transfer := newLeadershipTransfer(addr)
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.leadershipTransferCh, transfer, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	if err := drainErr(transfer.errCh, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	<-time.After(r.config.ElectionTimeout)
+	if r.getStateType() != followerStateType {
+		return fmt.Errorf("leader does not stepdown")
+	}
+	return nil
+}
