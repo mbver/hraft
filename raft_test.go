@@ -737,3 +737,16 @@ func TestRaft_LeadershipTransferIgnoreSpecifiedNonVoter(t *testing.T) {
 	expectedMsg := fmt.Sprintf("peer %s is non-voter", follower0.ID())
 	require.Equal(t, expectedMsg, err.Error())
 }
+
+func TestRaft_LeadershipTransferTimeout(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	require.Nil(t, err)
+
+	err = leader.TransferLeadership("", 20*time.Millisecond)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "failed to wait for force-replication response")
+}

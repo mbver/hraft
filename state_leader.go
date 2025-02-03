@@ -388,11 +388,11 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 			trySend(req.errCh, fmt.Errorf("peer replication for %s not found", req.addr))
 			return
 		}
-		errCh := make(chan error)
+		errCh := make(chan error, 1)
 		repl.forceReplicateCh <- errCh
-		err := <-repl.waitForErrCh(errCh, 10*l.raft.config.HeartbeatTimeout)
+		err := <-repl.waitForErrCh(errCh, req.timeoutCh)
 		if err != nil {
-			trySend(req.errCh, err)
+			trySend(req.errCh, fmt.Errorf("failed to wait for force-replication response: %w", err))
 			return
 		}
 		lastIdx, _ := l.raft.instate.getLastIdxTerm()
@@ -400,17 +400,26 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 			trySend(req.errCh, fmt.Errorf("unable to force replication to latest lastIdx=%d, nextIdx=%d", lastIdx, repl.getNextIdx()))
 			return
 		}
-		resp := CandidateNowResponse{}
-		err = l.raft.transport.CandidateNow(req.addr, &CandidateNowRequest{l.getTerm()}, &resp)
-		if err != nil {
-			trySend(req.errCh, err)
-			return
+		errCh = make(chan error, 1)
+		go func() {
+			resp := CandidateNowResponse{}
+			err = l.raft.transport.CandidateNow(req.addr, &CandidateNowRequest{l.getTerm()}, &resp)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if !resp.Success {
+				errCh <- fmt.Errorf("%s", resp.Msg)
+				return
+			}
+			errCh <- nil // success
+		}()
+		select {
+		case err = <-errCh:
+			req.errCh <- err
+		case <-req.timeoutCh:
+			req.errCh <- fmt.Errorf("timeout waiting for candidate now response")
 		}
-		if !resp.Success {
-			trySend(req.errCh, fmt.Errorf("%s", resp.Msg))
-			return
-		}
-		trySend(req.errCh, nil)
 	}()
 }
 

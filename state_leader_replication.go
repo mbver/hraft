@@ -320,12 +320,8 @@ func (r *peerReplication) waitForTimeout(timeout time.Duration) chan bool {
 	return ch
 }
 
-func (r *peerReplication) waitForErrCh(errCh chan error, timeout time.Duration) chan error {
+func (r *peerReplication) waitForErrCh(errCh chan error, timeoutCh <-chan time.Time) chan error {
 	resCh := make(chan error, 1)
-	timeoutCh := time.After(timeout)
-	if timeout == 0 { // wait forever!
-		timeoutCh = nil
-	}
 	go func() {
 		select {
 		case err := <-errCh:

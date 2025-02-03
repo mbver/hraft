@@ -165,24 +165,30 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 }
 
 type leadershipTransfer struct {
-	addr  string
-	errCh chan error
+	addr      string
+	timeoutCh <-chan time.Time
+	errCh     chan error
 }
 
-func newLeadershipTransfer(addr string) *leadershipTransfer {
+func newLeadershipTransfer(addr string, timeoutCh <-chan time.Time) *leadershipTransfer {
 	return &leadershipTransfer{
-		addr:  addr,
-		errCh: make(chan error, 1),
+		addr:      addr,
+		timeoutCh: timeoutCh,
+		errCh:     make(chan error, 1),
 	}
 }
 
 func (r *Raft) TransferLeadership(addr string, timeout time.Duration) error {
-	transfer := newLeadershipTransfer(addr)
 	timeoutCh := getTimeoutCh(timeout)
+	transfer := newLeadershipTransfer(addr, timeoutCh)
 	if err := sendToRaft(r.leadershipTransferCh, transfer, timeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
-	if err := drainErr(transfer.errCh, timeoutCh, r.shutdownCh()); err != nil {
+	drainTimeoutCh := timeoutCh
+	if timeout > 0 {
+		drainTimeoutCh = getTimeoutCh(timeout + 10*time.Millisecond) // allow more time to drain
+	}
+	if err := drainErr(transfer.errCh, drainTimeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
 	<-time.After(r.config.ElectionTimeout)
