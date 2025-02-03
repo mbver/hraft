@@ -36,7 +36,7 @@ func (c *Candidate) getVoters() []string {
 func (c *Candidate) HandleTransition(trans *Transition) {
 	switch trans.To {
 	case followerStateType:
-		if trans.Term < c.getTerm()-1 {
+		if trans.Term < c.getTerm() {
 			return
 		}
 		c.cancel.Close()
@@ -161,7 +161,7 @@ func (c *Candidate) runElection() {
 			return
 		case <-electionTimeoutCh: // election timeout, transition back to follower. run election again in next heartbeat timeout.
 			c.raft.logger.Debug("election timeout, fallback to follower")
-			<-c.raft.dispatchTransition(followerStateType, c.getTerm()-1)
+			<-c.raft.dispatchTransition(followerStateType, c.getTerm())
 			return
 		case <-c.raft.shutdownCh():
 			return
