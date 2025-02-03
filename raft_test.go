@@ -641,3 +641,17 @@ func TestRaft_UserRestore(t *testing.T) {
 		})
 	}
 }
+
+func TestRaft_LeadershipTransfer(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	err = leader.TransferLeadership("", time.Second)
+	require.Nil(t, err)
+	oldLeader := leader
+	leader = c.getNodesByState(leaderStateType)[0]
+	require.NotEqual(t, oldLeader.ID(), leader.ID())
+}

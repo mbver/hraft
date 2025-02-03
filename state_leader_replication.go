@@ -332,7 +332,6 @@ func (r *peerReplication) runPipeline() {
 		return
 	}
 	r.pipeline = pipe
-	defer pipe.Close()
 	r.raft.logger.Info("enter pipeline replication mode", "peer", r.addr)
 	defer r.raft.logger.Info("exit pipeline replication mode", "peer", r.addr)
 	go r.receivePipelineResponses()

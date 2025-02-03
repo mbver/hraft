@@ -176,7 +176,7 @@ func newLeadershipTransfer(addr string) *leadershipTransfer {
 	}
 }
 
-func (r *Raft) TransferLeader(addr string, timeout time.Duration) error {
+func (r *Raft) TransferLeadership(addr string, timeout time.Duration) error {
 	transfer := newLeadershipTransfer(addr)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.leadershipTransferCh, transfer, timeoutCh, r.shutdownCh()); err != nil {
