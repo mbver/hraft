@@ -382,9 +382,18 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 	r.heartbeatTimeout.reset()
 }
 
-func (r *Raft) handleCandidateNow(rpc *RPC, _ *CandidateNowRequest) {
+func (r *Raft) handleCandidateNow(rpc *RPC, req *CandidateNowRequest) {
+	_, term := r.instate.getLastIdxTerm()
+	if req.Term != term {
+		rpc.respCh <- &CandidateNowResponse{
+			Success: false,
+			Msg:     fmt.Sprintf("invalid term: expect %d, got %d", term, req.Term),
+		}
+	}
 	<-r.dispatchTransition(candidateStateType, r.getTerm()+1)
-	rpc.respCh <- &CandidateNowResponse{}
+	rpc.respCh <- &CandidateNowResponse{
+		Success: true,
+	}
 }
 
 func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {

@@ -84,9 +84,14 @@ type InstallSnapshotResponse struct {
 	Success bool
 }
 
-type CandidateNowRequest struct{}
+type CandidateNowRequest struct {
+	Term uint64
+}
 
-type CandidateNowResponse struct{}
+type CandidateNowResponse struct {
+	Success bool
+	Msg     string
+}
 
 type RpcResponse struct {
 	Response interface{}
@@ -597,10 +602,6 @@ func (t *NetTransport) handleInstallSnapshot(r *bufio.Reader, dec *codec.Decoder
 	rpc := newRPC(&req)
 	rpc.reader = io.LimitReader(r, req.Size)
 	return dispatchWaitRespond(rpc, t.rpcCh, enc, t.closed.Ch())
-}
-
-func (n *NetTransport) handleRpcTimeoutNow(dec *codec.Decoder, enc *codec.Encoder) error { // WHAT THE HECK IS THIS?
-	return nil
 }
 
 var ErrTransportShutdown = errors.New("transport is shutdown")

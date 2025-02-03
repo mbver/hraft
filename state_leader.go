@@ -400,8 +400,17 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 			trySend(req.errCh, fmt.Errorf("unable to force replication to latest lastIdx=%d, nextIdx=%d", lastIdx, repl.getNextIdx()))
 			return
 		}
-		err = l.raft.transport.CandidateNow(req.addr, &CandidateNowRequest{}, &CandidateNowResponse{})
-		trySend(req.errCh, err)
+		resp := CandidateNowResponse{}
+		err = l.raft.transport.CandidateNow(req.addr, &CandidateNowRequest{l.getTerm()}, &resp)
+		if err != nil {
+			trySend(req.errCh, err)
+			return
+		}
+		if !resp.Success {
+			trySend(req.errCh, fmt.Errorf("%s", resp.Msg))
+			return
+		}
+		trySend(req.errCh, nil)
 	}()
 }
 
