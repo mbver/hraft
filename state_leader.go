@@ -367,7 +367,12 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 		return
 	}
 	if req.addr == "" {
-		req.addr = l.mostCurrentFollower()
+		addr := l.mostCurrentFollower()
+		if addr == "" {
+			trySend(req.errCh, fmt.Errorf("unable to find most current follower"))
+			return
+		}
+		req.addr = addr
 	}
 	go func() {
 		defer l.inLeadershipTransfer.Store(false)
@@ -396,5 +401,22 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 }
 
 func (l *Leader) mostCurrentFollower() string {
-	return ""
+	l.l.Lock()
+	defer l.l.Unlock()
+	var mostCurrentId string
+	var nextIdx uint64
+	for _, id := range l.raft.Voters() {
+		if id == l.raft.ID() {
+			continue
+		}
+		repl, ok := l.replicationMap[id]
+		if !ok { // how on earth can this happen??
+			continue
+		}
+		if repl.getNextIdx() > nextIdx {
+			nextIdx = repl.getNextIdx()
+			mostCurrentId = id
+		}
+	}
+	return mostCurrentId
 }
