@@ -619,3 +619,7 @@ func checkClusterState(c *cluster) error {
 	}
 	return nil
 }
+
+func runAndCollectErr(fn func() error, errCh chan error) {
+	errCh <- fn()
+}

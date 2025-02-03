@@ -203,7 +203,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 func (l *Leader) HandleApply(a *Apply) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring an apply request. leadership is transferring...")
-		a.errCh <- ErrLeadershipTransferring
+		a.errCh <- ErrLeadershipTransferInProgress
 		return
 	}
 	batchSize := l.raft.config.MaxAppendEntries
@@ -224,7 +224,7 @@ func (l *Leader) HandleApply(a *Apply) {
 func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring a membership change request. leadership transferring...")
-		change.errCh <- ErrLeadershipTransferring
+		change.errCh <- ErrLeadershipTransferInProgress
 		return
 	}
 	if !l.raft.membership.isStable() {
@@ -281,7 +281,7 @@ var ErrAbortedByRestore = errors.New("abort inflight by restore")
 func (l *Leader) HandleRestoreRequest(req *userRestoreRequest) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring a user restore request. leadership transferring...")
-		req.errCh <- ErrLeadershipTransferring
+		req.errCh <- ErrLeadershipTransferInProgress
 		return
 	}
 	err := l.restoreSnapshot(req.meta, req.source)
@@ -353,12 +353,12 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	return nil
 }
 
-var ErrLeadershipTransferring = errors.New("leader is transferring")
+var ErrLeadershipTransferInProgress = errors.New("leadership transfer is in progress")
 
 func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring leadership transfer request. leadership transfer is in progress")
-		trySend(req.errCh, ErrLeadershipTransferring)
+		trySend(req.errCh, ErrLeadershipTransferInProgress)
 		return
 	}
 	l.inLeadershipTransfer.Store(true)

@@ -744,9 +744,36 @@ func TestRaft_LeadershipTransferTimeout(t *testing.T) {
 	defer cleanup()
 	require.Nil(t, err)
 	leader := c.getNodesByState(leaderStateType)[0]
-	require.Nil(t, err)
 
 	err = leader.TransferLeadership("", 20*time.Millisecond)
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "failed to wait for force-replication response")
+}
+
+func TestRaft_LeadershipTransferInProgress(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	leader.getLeaderState().inLeadershipTransfer.Store(true)
+
+	errCh := make(chan error, 3)
+	go runAndCollectErr(
+		func() error { return leader.AddVoter("abc", time.Second) },
+		errCh,
+	)
+	go runAndCollectErr(
+		func() error {
+			err := <-leader.Apply([]byte("abc"), time.Second)
+			return err
+		},
+		errCh,
+	)
+	go runAndCollectErr(
+		func() error { return leader.DemoteVoter("abc", time.Second) },
+		errCh,
+	)
+	err = drainAndCheckErr(errCh, ErrLeadershipTransferInProgress, 3, time.Second)
+	require.Nil(t, err)
 }
