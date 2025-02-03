@@ -390,7 +390,7 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 		}
 		errCh := make(chan error)
 		repl.forceReplicateCh <- errCh
-		err := <-errCh
+		err := <-repl.waitForErrCh(errCh, 10*l.raft.config.HeartbeatTimeout)
 		if err != nil {
 			trySend(req.errCh, err)
 			return

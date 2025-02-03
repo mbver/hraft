@@ -320,6 +320,29 @@ func (r *peerReplication) waitForTimeout(timeout time.Duration) chan bool {
 	return ch
 }
 
+func (r *peerReplication) waitForErrCh(errCh chan error, timeout time.Duration) chan error {
+	resCh := make(chan error, 1)
+	timeoutCh := time.After(timeout)
+	if timeout == 0 { // wait forever!
+		timeoutCh = nil
+	}
+	go func() {
+		select {
+		case err := <-errCh:
+			resCh <- err
+		case <-timeoutCh:
+			resCh <- fmt.Errorf("timeout waiting for errCh")
+		case <-r.stopCh:
+			resCh <- fmt.Errorf("replication stopped")
+		case <-r.stepdown.Ch():
+			resCh <- fmt.Errorf("leader stepdown")
+		case <-r.raft.shutdownCh():
+			resCh <- ErrRaftShutdown
+		}
+	}()
+	return resCh
+}
+
 func (r *peerReplication) runPipeline() {
 	if !r.raft.wg.Add(1) {
 		return
