@@ -562,6 +562,27 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 	return cluster, cleanup, nil
 }
 
+func createClusterNoBootStrap(n int, conf *Config) (*cluster, func(), error) {
+	addrSource := newTestAddressesWithSameIP()
+	addresses := make([]string, n)
+	for i := 0; i < n; i++ {
+		addresses[i] = addrSource.next()
+	}
+	cluster := &cluster{
+		rafts:         map[string]*Raft{},
+		connGetterMap: map[string]*BlockableConnGetter{},
+	}
+	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
+	for _, addr := range addresses {
+		raft, _, err := createTestNodeFromAddr(addr, conf)
+		if err != nil {
+			return nil, cleanup, err
+		}
+		cluster.add(raft)
+	}
+	return cluster, cleanup, nil
+}
+
 func retry(n int, f func() (bool, string)) (success bool, msg string) {
 	for i := 0; i < n; i++ {
 		success, msg = f()

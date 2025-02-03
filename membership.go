@@ -78,7 +78,7 @@ type membership struct {
 	localID        string
 	latestPeers    []*Peer
 	lastestIdx     uint64
-	committedPeers []*Peer // ======= is this necessary?
+	committedPeers []*Peer
 	committedIdx   uint64
 }
 

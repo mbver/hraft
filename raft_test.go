@@ -642,6 +642,75 @@ func TestRaft_UserRestore(t *testing.T) {
 	}
 }
 
+func TestRaft_LeadershipTransfer_MostCurrentFollower(t *testing.T) {
+	t.Parallel()
+	type idNextIdx struct {
+		id      string
+		nextIdx uint64
+	}
+
+	cases := []struct {
+		name        string
+		peers       []*idNextIdx
+		mostCurrent string
+	}{
+		{"one peer", []*idNextIdx{{"a", 9}}, "a"},
+		{"two peers", []*idNextIdx{{"a", 9}, {"b", 8}}, "a"},
+		{"three peers", []*idNextIdx{{"c", 9}, {"b", 8}, {"a", 8}}, "c"},
+		{"four peers", []*idNextIdx{{"a", 7}, {"b", 11}, {"a", 8}}, "b"},
+	}
+	cluster, cleanup, err := createClusterNoBootStrap(len(cases), nil)
+	defer cleanup()
+	require.Nil(t, err)
+
+	rafts := cluster.getNodesByState(followerStateType)
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			raft := rafts[i]
+			l := raft.getLeaderState()
+			l.l.Lock()
+			raft.membership.l.Lock()
+			l.replicationMap = map[string]*peerReplication{}
+			for _, p := range c.peers {
+				raft.membership.latestPeers = append(raft.membership.latestPeers, &Peer{p.id, RoleVoter})
+				l.replicationMap[p.id] = &peerReplication{nextIdx: p.nextIdx}
+			}
+			l.l.Unlock()
+			raft.membership.l.Unlock()
+			require.Equal(t, c.mostCurrent, l.mostCurrentFollower())
+		})
+	}
+}
+
+func TestRaft_LeadershipTransferInProgress(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	leader.getLeaderState().inLeadershipTransfer.Store(true)
+
+	errCh := make(chan error, 3)
+	go runAndCollectErr(
+		func() error { return leader.AddVoter("abc", time.Second) },
+		errCh,
+	)
+	go runAndCollectErr(
+		func() error {
+			err := <-leader.Apply([]byte("abc"), time.Second)
+			return err
+		},
+		errCh,
+	)
+	go runAndCollectErr(
+		func() error { return leader.DemoteVoter("abc", time.Second) },
+		errCh,
+	)
+	err = drainAndCheckErr(errCh, ErrLeadershipTransferInProgress, 3, time.Second)
+	require.Nil(t, err)
+}
+
 func TestRaft_LeadershipTransfer(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster(3, nil)
@@ -750,30 +819,30 @@ func TestRaft_LeadershipTransferTimeout(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to wait for force-replication response")
 }
 
-func TestRaft_LeadershipTransferInProgress(t *testing.T) {
+func TestRaft_LeadershipTransfer_ReplicationCatchup(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster(3, nil)
 	defer cleanup()
 	require.Nil(t, err)
 	leader := c.getNodesByState(leaderStateType)[0]
-	leader.getLeaderState().inLeadershipTransfer.Store(true)
+	follower0 := c.getNodesByState(followerStateType)[0]
 
-	errCh := make(chan error, 3)
-	go runAndCollectErr(
-		func() error { return leader.AddVoter("abc", time.Second) },
-		errCh,
-	)
-	go runAndCollectErr(
-		func() error {
-			err := <-leader.Apply([]byte("abc"), time.Second)
-			return err
-		},
-		errCh,
-	)
-	go runAndCollectErr(
-		func() error { return leader.DemoteVoter("abc", time.Second) },
-		errCh,
-	)
-	err = drainAndCheckErr(errCh, ErrLeadershipTransferInProgress, 3, time.Second)
+	for i := 0; i < 1000; i++ {
+		// apply a lot, skip error checking because
+		// leadership transfer will ocurr right in
+		// the middle. applyCh and leadershipTransferCh
+		// will be racing to fire in main loop.
+		leader.Apply([]byte(fmt.Sprintf("test-%d", i)), time.Second)
+	}
+
+	err = leader.TransferLeadership(follower0.ID(), time.Second)
 	require.Nil(t, err)
+
+	oldLeader := leader
+	leader = c.getNodesByState(leaderStateType)[0]
+	require.NotEqual(t, oldLeader.ID(), leader.ID())
+	lastIdx0, term0 := oldLeader.instate.getLastIdxTerm()
+	lastIdx1, term1 := leader.instate.getLastIdxTerm()
+	require.Equal(t, lastIdx0, lastIdx1)
+	require.Equal(t, term0, term1)
 }
