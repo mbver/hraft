@@ -366,10 +366,15 @@ func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
 		trySend(req.errCh, fmt.Errorf("leader %s can not transfer leadership to itself", l.raft.ID()))
 		return
 	}
+	if req.addr != "" {
+		if l.raft.membership.getPeer(req.addr) != RoleVoter {
+			trySend(req.errCh, fmt.Errorf("peer %s is non-voter", req.addr))
+		}
+	}
 	if req.addr == "" {
 		addr := l.mostCurrentFollower()
 		if addr == "" {
-			trySend(req.errCh, fmt.Errorf("unable to find most current follower"))
+			trySend(req.errCh, fmt.Errorf("unable to find most current follower. voters are %v", l.raft.Voters()))
 			return
 		}
 		req.addr = addr

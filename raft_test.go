@@ -655,3 +655,85 @@ func TestRaft_LeadershipTransfer(t *testing.T) {
 	leader = c.getNodesByState(leaderStateType)[0]
 	require.NotEqual(t, oldLeader.ID(), leader.ID())
 }
+
+func TestRaft_LeadershipTransferWithOneNode(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(1, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	err = leader.TransferLeadership("", time.Second)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "unable to find most current follower")
+}
+
+func TestRaft_LeadershipTransferWithSevenNodes(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(7, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	err = leader.TransferLeadership("", time.Second)
+	require.Nil(t, err)
+	oldLeader := leader
+	leader = c.getNodesByState(leaderStateType)[0]
+	require.NotEqual(t, oldLeader.ID(), leader.ID())
+}
+
+func TestRaft_LeadershipTransferToInvalidID(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	err = leader.TransferLeadership("awesome_peer", time.Second)
+	require.NotNil(t, err)
+	require.Equal(t, err.Error(), "peer awesome_peer is non-voter")
+}
+
+func TestRaft_LeadershipTransferToItself(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+
+	err = leader.TransferLeadership(leader.ID(), time.Second)
+	require.NotNil(t, err)
+	expectedMsg := fmt.Sprintf("leader %s can not transfer leadership to itself", leader.ID())
+	require.Equal(t, expectedMsg, err.Error())
+}
+
+func TestRaft_LeadershipTransferIgnoreNonVoters(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(2, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	follower := c.getNodesByState(followerStateType)[0]
+	err = leader.DemoteVoter(follower.ID(), time.Second)
+	require.Nil(t, err)
+
+	err = leader.TransferLeadership("", time.Second)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "unable to find most current follower")
+}
+
+func TestRaft_LeadershipTransferIgnoreSpecifiedNonVoter(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	follower0 := c.getNodesByState(followerStateType)[0]
+	err = leader.DemoteVoter(follower0.ID(), time.Second)
+	require.Nil(t, err)
+
+	err = leader.TransferLeadership(follower0.ID(), time.Second)
+	require.NotNil(t, err)
+	expectedMsg := fmt.Sprintf("peer %s is non-voter", follower0.ID())
+	require.Equal(t, expectedMsg, err.Error())
+}
