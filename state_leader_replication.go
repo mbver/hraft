@@ -161,6 +161,10 @@ func (r *peerReplication) heartbeat() {
 			continue
 		}
 		backoff.reset()
+		// resp.Success == false if and only if our term is behind
+		if resp.Term > r.currentTerm {
+			<-r.raft.dispatchTransition(followerStateType, r.currentTerm)
+		}
 	}
 }
 
