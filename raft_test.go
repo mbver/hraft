@@ -342,6 +342,7 @@ func TestRaft_DemoteVoter(t *testing.T) {
 		require.NotEqual(t, follower0.ID(), v)
 	}
 }
+
 func TestRaft_VerifyLeader(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster(3, nil)
@@ -349,8 +350,8 @@ func TestRaft_VerifyLeader(t *testing.T) {
 	require.Nil(t, err)
 
 	leader := c.getNodesByState(leaderStateType)[0]
-	success := leader.VerifyLeader(500 * time.Millisecond)
-	require.True(t, success)
+	err = leader.VerifyLeader(time.Second)
+	require.Nil(t, err)
 }
 
 func TestRaft_VerifyLeader_Single(t *testing.T) {
@@ -360,8 +361,8 @@ func TestRaft_VerifyLeader_Single(t *testing.T) {
 	require.Nil(t, err)
 
 	leader := c.getNodesByState(leaderStateType)[0]
-	success := leader.VerifyLeader(500 * time.Millisecond)
-	require.True(t, success)
+	err = leader.VerifyLeader(time.Second)
+	require.Nil(t, err)
 }
 
 func TestRaft_VerifyLeader_Fail(t *testing.T) {
@@ -383,8 +384,9 @@ func TestRaft_VerifyLeader_Fail(t *testing.T) {
 	leader = follower
 	require.Equal(t, leaderStateType, leader.getStateType())
 
-	success := oldLeader.VerifyLeader(500 * time.Millisecond)
-	require.False(t, success)
+	err = oldLeader.VerifyLeader(time.Second)
+	require.NotNil(t, err)
+	require.Equal(t, ErrNotLeader, err)
 }
 
 func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
@@ -398,8 +400,9 @@ func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
 
 	c.partition(follower0.ID())
 	sleep()
-	success := leader.VerifyLeader(500 * time.Millisecond)
-	require.True(t, success)
+	err = leader.VerifyLeader(500 * time.Millisecond)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "timeout draining error")
 }
 
 func TestRaft_UserSnapshot(t *testing.T) {

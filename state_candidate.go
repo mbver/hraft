@@ -79,6 +79,10 @@ func (c *Candidate) HandleLeadershipTransfer(req *leadershipTransfer) {
 	trySend(req.errCh, ErrNotLeader)
 }
 
+func (c *Candidate) HandleVerifyLeader(req *verifyLeaderRequest) {
+	trySend(req.errCh, ErrNotLeader)
+}
+
 type voteResult struct {
 	VoterId  string
 	Response *VoteResponse

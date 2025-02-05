@@ -3,6 +3,7 @@ package hraft
 import (
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -81,7 +82,7 @@ func (r *Raft) DemoteVoter(addr string, timeout time.Duration) error {
 // Bootstrap is called only once on the first node in a cluster.
 // Subsequent calls will return an error that can be safely ignored.
 // Later nodes are not bootstraped and added via AddVoter.
-func (r *Raft) Bootstrap(timeout time.Duration) error { // TODO: timeout is in config?
+func (r *Raft) Bootstrap() error { // TODO: timeout is in config?
 	hasState, err := r.hasExistingState()
 	if err != nil {
 		return err
@@ -91,26 +92,23 @@ func (r *Raft) Bootstrap(timeout time.Duration) error { // TODO: timeout is in c
 	}
 	peers := []*Peer{{r.ID(), RoleVoter}}
 	r.membership.setLatest(peers, 0)
-	if !r.VerifyLeader(timeout) {
-		return fmt.Errorf("failed transition to leader")
+	checkInterval := (r.config.HeartbeatTimeout + r.config.ElectionTimeout + 10*time.Millisecond) / 4
+	success, msg := retry(4, func() (bool, string) {
+		<-time.After(checkInterval)
+		if r.getStateType() != leaderStateType {
+			return false, "failed to transition to leader"
+		}
+		return true, ""
+	})
+	if !success {
+		return fmt.Errorf("%s", msg)
 	}
 	m := newMembershipChange("", bootstrap)
-	timeoutCh := getTimeoutCh(timeout)
+	timeoutCh := getTimeoutCh(time.Second)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
 	return drainErr(m.errCh, timeoutCh, r.shutdownCh())
-}
-
-// TODO: Only verify if replication succeeds?
-func (r *Raft) VerifyLeader(timeout time.Duration) bool {
-	timeoutCh := getTimeoutCh(timeout)
-	select {
-	case r.getLeaderState().verifyReqCh <- struct{}{}:
-		return true
-	case <-timeoutCh:
-		return false
-	}
 }
 
 type userSnapshotRequest struct {
@@ -196,4 +194,53 @@ func (r *Raft) TransferLeadership(addr string, timeout time.Duration) error {
 		return fmt.Errorf("leader does not stepdown")
 	}
 	return nil
+}
+
+type verifyLeaderRequest struct {
+	l            sync.Mutex
+	numRequired  int
+	numConfirmed int
+	done         bool
+	errCh        chan error
+}
+
+func (v *verifyLeaderRequest) confirm(isLeader bool) {
+	v.l.Lock()
+	defer v.l.Unlock()
+	if v.done {
+		return
+	}
+	// the only case for negative response
+	// is stale term
+	if !isLeader {
+		v.done = true
+		trySend(v.errCh, ErrNotLeader)
+		return
+	}
+	v.numConfirmed++
+	if v.numConfirmed >= v.numRequired {
+		v.done = true
+		trySend(v.errCh, nil)
+	}
+}
+
+func (v *verifyLeaderRequest) setNumRequired(n int) {
+	v.l.Lock()
+	defer v.l.Unlock()
+	v.numRequired = n
+}
+
+func newVerifyLeaderRequest() *verifyLeaderRequest {
+	return &verifyLeaderRequest{
+		errCh: make(chan error, 1),
+	}
+}
+
+func (r *Raft) VerifyLeader(timeout time.Duration) error {
+	req := newVerifyLeaderRequest()
+	timeoutCh := getTimeoutCh(timeout)
+	if err := sendToRaft(r.verifyLeaderCh, req, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(req.errCh, timeoutCh, r.shutdownCh())
 }

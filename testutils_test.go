@@ -536,7 +536,7 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 		cluster.connGetterMap[raft.ID()] = connGetter
 		if i == 0 {
 			first = raft
-			if err := first.Bootstrap(1000 * time.Millisecond); err != nil {
+			if err := first.Bootstrap(); err != nil {
 				return nil, cleanup, err
 			}
 			continue
@@ -581,16 +581,6 @@ func createClusterNoBootStrap(n int, conf *Config) (*cluster, func(), error) {
 		cluster.add(raft)
 	}
 	return cluster, cleanup, nil
-}
-
-func retry(n int, f func() (bool, string)) (success bool, msg string) {
-	for i := 0; i < n; i++ {
-		success, msg = f()
-		if success {
-			return
-		}
-	}
-	return
 }
 
 func createTestNode(conf *Config) (*Raft, func(), error) {

@@ -20,7 +20,6 @@ type Leader struct {
 	replicationMap       map[string]*peerReplication
 	staging              *staging
 	inLeadershipTransfer atomic.Bool
-	verifyReqCh          chan struct{}
 	stepdown             *ResetableProtectedChan
 }
 
@@ -30,7 +29,6 @@ func NewLeader(r *Raft) *Leader {
 		inflight:       newInflight(),
 		replicationMap: map[string]*peerReplication{},
 		stepdown:       newResetableProtectedChan(),
-		verifyReqCh:    make(chan struct{}),
 	}
 	l.stepdown.Close()
 	return l
@@ -61,19 +59,6 @@ func (l *Leader) StepUp() {
 	l.inflight.Reset()
 	l.startReplication()
 	go l.receiveStaging()
-	go l.receiveVerifyRequests()
-}
-
-func (l *Leader) receiveVerifyRequests() {
-	for {
-		select {
-		case <-l.verifyReqCh:
-		case <-l.stepdown.Ch():
-			return
-		case <-l.raft.shutdownCh():
-			return
-		}
-	}
 }
 
 func (l *Leader) Stepdown() {
@@ -84,9 +69,7 @@ func (l *Leader) Stepdown() {
 	}
 	l.active = false
 	l.stepdown.Close()
-	// TODO: wait until all goros stop
 	l.replicationMap = map[string]*peerReplication{}
-	// TODO: transition to follower
 }
 
 func (l *Leader) HandleTransition(trans *Transition) {
@@ -442,4 +425,21 @@ func (l *Leader) mostCurrentFollower() string {
 		}
 	}
 	return mostCurrentId
+}
+
+func (l *Leader) HandleVerifyLeader(req *verifyLeaderRequest) {
+	l.l.Lock()
+	defer l.l.Unlock()
+	numRequired := len(l.replicationMap)/2 + 1
+	// no followers, only 1 leader
+	if numRequired == 1 {
+		trySend(req.errCh, nil)
+		return
+	}
+	req.setNumRequired(numRequired)
+	for _, repl := range l.replicationMap {
+		repl.addVerifyRequest(req)
+		// trigger an immediate heartbeat
+		repl.pulseCh <- struct{}{}
+	}
 }

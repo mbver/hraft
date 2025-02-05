@@ -60,3 +60,6 @@ func (f *Follower) HandleRestoreRequest(req *userRestoreRequest) {
 func (f *Follower) HandleLeadershipTransfer(req *leadershipTransfer) {
 	trySend(req.errCh, ErrNotLeader)
 }
+func (f *Follower) HandleVerifyLeader(req *verifyLeaderRequest) {
+	trySend(req.errCh, ErrNotLeader)
+}

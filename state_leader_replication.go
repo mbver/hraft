@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -35,7 +36,9 @@ type peerReplication struct {
 	logAddedCh chan struct{}
 	// forceReplicateCh is notified during leadership transfer
 	forceReplicateCh chan chan error
-	// trigger a heartbeat immediately
+	verifyL          sync.Mutex
+	verifyRequests   []*verifyLeaderRequest
+	// trigger a heartbeat immediately to response for verify leader request
 	pulseCh chan struct{}
 	// leader's stepdown control
 	stepdown *ResetableProtectedChan
@@ -141,6 +144,7 @@ func (r *peerReplication) waitForHearbeatTrigger() (gotSignal bool) {
 func (r *peerReplication) heartbeat() {
 	r.raft.wg.Add(1)
 	defer r.raft.wg.Done()
+	defer r.verifyAll(false)
 	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
 	req := AppendEntriesRequest{
 		Term:   r.currentTerm,
@@ -164,7 +168,9 @@ func (r *peerReplication) heartbeat() {
 		// resp.Success == false if and only if our term is behind
 		if resp.Term > r.currentTerm {
 			<-r.raft.dispatchTransition(followerStateType, r.currentTerm)
+			return
 		}
+		r.verifyAll(true)
 	}
 }
 
@@ -504,6 +510,7 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		updateMatchIdx:     l.commit.updateMatchIdx,
 		logAddedCh:         make(chan struct{}, 1),
 		forceReplicateCh:   make(chan chan error, 1),
+		pulseCh:            make(chan struct{}, 1),
 		currentTerm:        l.raft.getTerm(),
 		nextIdx:            lastIdx + 1,
 		stepdown:           l.stepdown,
@@ -528,4 +535,20 @@ func (l *Leader) stopPeerReplication(addr string) {
 	}
 	close(r.stopCh)
 	delete(l.replicationMap, addr)
+}
+
+func (r *peerReplication) addVerifyRequest(req *verifyLeaderRequest) {
+	r.verifyL.Lock()
+	defer r.verifyL.Unlock()
+	r.verifyRequests = append(r.verifyRequests, req)
+}
+
+func (r *peerReplication) verifyAll(isLeader bool) {
+	r.verifyL.Lock()
+	reqs := r.verifyRequests
+	r.verifyRequests = nil
+	r.verifyL.Unlock()
+	for _, req := range reqs {
+		req.confirm(isLeader)
+	}
 }

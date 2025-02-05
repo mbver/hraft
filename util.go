@@ -214,3 +214,13 @@ func logFinishTransition(logger hclog.Logger, trans *Transition, currentState Ra
 		"current_term", currentTerm,
 	)
 }
+
+func retry(n int, f func() (bool, string)) (success bool, msg string) {
+	for i := 0; i < n; i++ {
+		success, msg = f()
+		if success {
+			return
+		}
+	}
+	return
+}

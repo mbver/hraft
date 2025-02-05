@@ -59,6 +59,7 @@ type State interface {
 	HandleMembershipChange(*membershipChange)
 	HandleRestoreRequest(*userRestoreRequest)
 	HandleLeadershipTransfer(*leadershipTransfer)
+	HandleVerifyLeader(*verifyLeaderRequest)
 }
 
 type Raft struct {
@@ -79,6 +80,7 @@ type Raft struct {
 	commitNotifyCh       chan struct{}
 	membershipChangeCh   chan *membershipChange
 	leadershipTransferCh chan *leadershipTransfer
+	verifyLeaderCh       chan *verifyLeaderRequest
 	transitionCh         chan *Transition
 	snapshotReqCh        chan *userSnapshotRequest
 	restoreReqCh         chan *userRestoreRequest
@@ -114,6 +116,8 @@ func (r *Raft) receiveMsgs() {
 			r.getState().HandleMembershipChange(change)
 		case transfer := <-r.leadershipTransferCh:
 			r.getState().HandleLeadershipTransfer(transfer)
+		case verifyReq := <-r.verifyLeaderCh:
+			r.getState().HandleVerifyLeader(verifyReq)
 		case req := <-r.restoreReqCh:
 			r.getState().HandleRestoreRequest(req)
 		case <-r.heartbeatTimeout.getCh():

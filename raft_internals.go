@@ -488,7 +488,8 @@ func sendToRaft[T *Apply |
 	*membershipChange |
 	*leadershipTransfer |
 	*userSnapshotRequest |
-	*userRestoreRequest](
+	*userRestoreRequest |
+	*verifyLeaderRequest](
 	ch chan T, msg T, timeoutCh <-chan time.Time, shutdownCh chan struct{},
 ) error {
 	// prioritize shutdownCh and timeoutCh
