@@ -142,6 +142,12 @@ func (l *Leader) Stepdown() {
 	l.active = false
 	l.stepdown.Close()
 	l.replicationMap = map[string]*peerReplication{}
+	// we may stepdown for a lot of reasons
+	// stale term and self-verify will not set last leader contact
+	// so we do it here. it is not the actual contact in the case of
+	// self-verify failed. but still better than the stale contact time
+	// before we step up!
+	l.raft.leaderContact.setNow()
 }
 
 func (l *Leader) HandleTransition(trans *Transition) {

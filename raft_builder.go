@@ -76,6 +76,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		commitNotifyCh:       make(chan struct{}, 1),
 		membershipChangeCh:   make(chan *membershipChange),
 		leadershipTransferCh: make(chan *leadershipTransfer),
+		leaderContact:        newContactTime(),
 		verifyLeaderCh:       make(chan *verifyLeaderRequest),
 		transitionCh:         make(chan *Transition),
 		snapshotReqCh:        make(chan *userSnapshotRequest),

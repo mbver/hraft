@@ -244,3 +244,7 @@ func (r *Raft) VerifyLeader(timeout time.Duration) error {
 	}
 	return drainErr(req.errCh, timeoutCh, r.shutdownCh())
 }
+
+func (r *Raft) LastLeaderContact() time.Time {
+	return r.leaderContact.get()
+}

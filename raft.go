@@ -80,6 +80,7 @@ type Raft struct {
 	commitNotifyCh       chan struct{}
 	membershipChangeCh   chan *membershipChange
 	leadershipTransferCh chan *leadershipTransfer
+	leaderContact        *ContactTime
 	verifyLeaderCh       chan *verifyLeaderRequest
 	transitionCh         chan *Transition
 	snapshotReqCh        chan *userSnapshotRequest

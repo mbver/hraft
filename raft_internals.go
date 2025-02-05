@@ -58,6 +58,7 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 	r.updateLeaderCommit(req.LeaderCommitIdx)
 	resp.Success = true
 	r.heartbeatTimeout.reset()
+	r.leaderContact.setNow()
 }
 
 func (r *Raft) checkPrevLog(idx, term uint64) bool {
@@ -380,6 +381,7 @@ func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
 	)
 	resp.Granted = true
 	r.heartbeatTimeout.reset()
+	r.leaderContact.setNow()
 }
 
 func (r *Raft) handleCandidateNow(rpc *RPC, req *CandidateNowRequest) {
@@ -464,6 +466,7 @@ func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
 	}
 	r.logger.Info("Installed remote snapshot")
 	resp.Success = true
+	r.leaderContact.setNow()
 }
 
 func (r *Raft) hasExistingState() (bool, error) {

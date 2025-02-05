@@ -850,3 +850,34 @@ func TestRaft_LeadershipTransfer_ReplicationCatchup(t *testing.T) {
 	require.Equal(t, lastIdx0, lastIdx1)
 	require.Equal(t, term0, term1)
 }
+
+func TestRaft_SelfVerifyFail(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster(2, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	follower := c.getNodesByState(followerStateType)[0]
+
+	partitionTime := time.Now()
+	c.partition(follower.ID())
+
+	stepdown, msg := retry(2, func() (bool, string) {
+		time.Sleep(leader.config.LeaderLeaseTimeout)
+		err := leader.VerifyLeader(time.Second)
+		if err != ErrNotLeader {
+			return false, "not stepdown"
+		}
+		return true, ""
+	})
+	require.True(t, stepdown, msg)
+
+	oldLeader := leader
+	require.True(t, oldLeader.LastLeaderContact().After(partitionTime))
+	require.Zero(t, len(c.getNodesByState(leaderStateType)))
+
+	lastContact := follower.LastLeaderContact()
+	sleep()
+	// no further contact
+	require.Equal(t, lastContact, follower.LastLeaderContact())
+}
