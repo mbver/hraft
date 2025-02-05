@@ -52,7 +52,7 @@ func (l *Leader) StepUp() {
 	l.stepdown.Reset()
 	l.staging = newStaging()
 	if id := l.raft.StagingPeer(); id != "" {
-		l.staging.stage(id)
+		l.staging.stage(id, l.raft.shutdownCh(), l.stepdown.Ch())
 	}
 	commitIdx := l.raft.instate.getCommitIdx()
 	l.commit = newCommitControl(commitIdx, l.raft.commitNotifyCh, l.raft.Voters())
@@ -242,7 +242,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 		l.stopPeerReplication(change.addr)
 		return
 	case addStaging:
-		l.staging.stage(change.addr)
+		l.staging.stage(change.addr, l.raft.shutdownCh(), l.stepdown.Ch())
 	}
 	l.l.Lock()
 	l.startReplication()

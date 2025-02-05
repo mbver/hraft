@@ -29,17 +29,25 @@ func (s *staging) getId() string {
 	return s.id
 }
 
-func (s *staging) stage(id string) {
+func (s *staging) stage(id string, shutdownCh, stepdownCh chan struct{}) {
 	s.l.Lock()
 	s.id = id
 	s.l.Unlock()
-	s.stageCh <- struct{}{} // TODO: have a timeout?
+	select {
+	case s.stageCh <- struct{}{}:
+	case <-stepdownCh:
+	case <-shutdownCh:
+	}
 }
 
 // the nested loop to ensure
 // only one staging is handled at a time.
 // goro is blocked until peer is promoted
 func (l *Leader) receiveStaging() {
+	if !l.raft.wg.Add(1) {
+		return
+	}
+	defer l.raft.wg.Done()
 	for {
 		select {
 		case <-l.staging.stageCh:
@@ -56,7 +64,6 @@ func (l *Leader) receiveLogSynced() {
 	select {
 	case <-l.staging.logSyncCh:
 		for {
-			// ======== this is ugly
 			if l.stepdown.IsClosed() || l.raft.shutdown.IsClosed() {
 				return
 			}
