@@ -167,7 +167,10 @@ func (r *peerReplication) heartbeat() {
 		backoff.reset()
 		// resp.Success == false if and only if our term is behind
 		if resp.Term > r.currentTerm {
-			<-r.raft.dispatchTransition(followerStateType, r.currentTerm)
+			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
+				r.stepdown.Close() // stop all replication
+				<-r.raft.dispatchTransition(followerStateType, resp.Term)
+			}
 			return
 		}
 		r.verifyAll(true)
@@ -220,7 +223,7 @@ func (r *peerReplication) replicate() error {
 				r.stepdown.Close() // stop all replication
 				<-r.raft.dispatchTransition(followerStateType, res.Term)
 			}
-			return err
+			return nil
 		}
 		if res.Success {
 			r.backoff.reset()

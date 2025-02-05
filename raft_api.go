@@ -93,7 +93,7 @@ func (r *Raft) Bootstrap() error { // TODO: timeout is in config?
 	peers := []*Peer{{r.ID(), RoleVoter}}
 	r.membership.setLatest(peers, 0)
 	checkInterval := (r.config.HeartbeatTimeout + r.config.ElectionTimeout + 10*time.Millisecond) / 4
-	success, msg := retry(4, func() (bool, string) {
+	success, msg := retry(8, func() (bool, string) {
 		<-time.After(checkInterval)
 		if r.getStateType() != leaderStateType {
 			return false, "failed to transition to leader"

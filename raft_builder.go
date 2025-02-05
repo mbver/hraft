@@ -83,6 +83,8 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		heartbeatTimeout:     newHeartbeatTimeout(b.config.HeartbeatTimeout),
 		wg:                   &ProtectedWaitGroup{},
 		shutdown:             newProtectedChan(),
+		stopTransitionCh:     make(chan struct{}),
+		transitionStopDoneCh: make(chan struct{}),
 	}
 	raft.stateMap = NewStateMap(raft)
 	go raft.receiveMsgs()

@@ -152,7 +152,7 @@ type NetTransportConfig struct {
 }
 
 type NetTransport struct {
-	wg            sync.WaitGroup
+	wg            *ProtectedWaitGroup
 	config        *NetTransportConfig
 	logger        hclog.Logger
 	closed        *ProtectedChan
@@ -196,6 +196,7 @@ func NewNetTransport(config *NetTransportConfig, logger hclog.Logger, connGetter
 		return nil, err
 	}
 	t := &NetTransport{
+		wg:            &ProtectedWaitGroup{},
 		config:        config,
 		logger:        logger,
 		closed:        newProtectedChan(),
@@ -401,7 +402,9 @@ func (t *NetTransport) returnConn(conn *peerConn) {
 }
 
 func (t *NetTransport) listen() {
-	t.wg.Add(1)
+	if !t.wg.Add(1) {
+		return
+	}
 	defer t.wg.Done()
 	backoff := newBackoff(5*time.Millisecond, time.Second)
 	for {
@@ -497,7 +500,9 @@ func (p *replicationPipeline) readResponse(resp *AppendEntriesResponse) error {
 }
 
 func (t *NetTransport) handleConn(conn net.Conn) {
-	t.wg.Add(1)
+	if !t.wg.Add(1) {
+		return
+	}
 	defer t.wg.Done()
 	defer func() {
 		conn.Close()

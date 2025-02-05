@@ -87,6 +87,8 @@ type Raft struct {
 	heartbeatTimeout     *heartbeatTimeout
 	wg                   *ProtectedWaitGroup
 	shutdown             *ProtectedChan
+	stopTransitionCh     chan struct{}
+	transitionStopDoneCh chan struct{}
 }
 
 func (r *Raft) Shutdown() {
@@ -95,6 +97,11 @@ func (r *Raft) Shutdown() {
 	}
 	r.shutdown.Close()
 	r.wg.Wait()
+	// transitions are dispatched in mainLoop and replicationLoop.
+	// transitions must be received so these loops can function normally or exit.
+	// transtionLoop is the last to be stopped.
+	close(r.stopTransitionCh)
+	<-r.transitionStopDoneCh
 	r.appstate.Stop()
 	r.transport.Close()
 }
@@ -151,8 +158,6 @@ func (r *Raft) receiveHeartbeat() {
 
 // handle state transition
 func (r *Raft) receiveTransitions() {
-	r.wg.Add(1)
-	defer r.wg.Done()
 	for {
 		select {
 		case transition := <-r.transitionCh:
@@ -163,7 +168,8 @@ func (r *Raft) receiveTransitions() {
 			)
 			r.getState().HandleTransition(transition)
 			close(transition.DoneCh)
-		case <-r.shutdownCh():
+		case <-r.stopTransitionCh:
+			close(r.transitionStopDoneCh)
 			return
 		}
 	}
