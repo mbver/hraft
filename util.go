@@ -61,6 +61,56 @@ func newResetableProtectedChan() *ResetableProtectedChan {
 	return &ResetableProtectedChan{newProtectedChan()}
 }
 
+type ProtectedWaitGroup struct {
+	l       sync.Mutex
+	wg      sync.WaitGroup
+	blocked bool
+}
+
+func (w *ProtectedWaitGroup) Add(n int) bool {
+	w.l.Lock()
+	defer w.l.Unlock()
+	if w.blocked {
+		return false
+	}
+	w.wg.Add(n)
+	return true
+}
+
+func (w *ProtectedWaitGroup) Done() {
+	w.wg.Done()
+}
+
+func (w *ProtectedWaitGroup) Wait() {
+	w.l.Lock()
+	w.blocked = true
+	w.l.Unlock()
+	w.wg.Wait()
+}
+
+type ContactTime struct {
+	l    sync.Mutex
+	time time.Time
+}
+
+func newContactTime() *ContactTime {
+	return &ContactTime{
+		time: time.Now(),
+	}
+}
+
+func (t *ContactTime) setNow() {
+	t.l.Lock()
+	defer t.l.Unlock()
+	t.time = time.Now()
+}
+
+func (t *ContactTime) get() time.Time {
+	t.l.Lock()
+	defer t.l.Unlock()
+	return t.time
+}
+
 func decode(buf []byte, out interface{}) error {
 	r := bytes.NewBuffer(buf)
 	hd := codec.MsgpackHandle{}
@@ -179,32 +229,6 @@ func tryGetNotify(ch chan struct{}) bool {
 }
 
 // prevent calling wg.Add after wg.Wait
-type ProtectedWaitGroup struct {
-	l       sync.Mutex
-	wg      sync.WaitGroup
-	blocked bool
-}
-
-func (w *ProtectedWaitGroup) Add(n int) bool {
-	w.l.Lock()
-	defer w.l.Unlock()
-	if w.blocked {
-		return false
-	}
-	w.wg.Add(n)
-	return true
-}
-
-func (w *ProtectedWaitGroup) Done() {
-	w.wg.Done()
-}
-
-func (w *ProtectedWaitGroup) Wait() {
-	w.l.Lock()
-	w.blocked = true
-	w.l.Unlock()
-	w.wg.Wait()
-}
 
 func logFinishTransition(logger hclog.Logger, trans *Transition, currentState RaftStateType, currentTerm uint64) {
 	logger.Info(

@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+const (
+	minCheckInterval = 10 * time.Millisecond
+)
+
 type Leader struct {
 	term                 uint64
 	l                    sync.Mutex
@@ -58,7 +62,75 @@ func (l *Leader) StepUp() {
 	l.commit = newCommitControl(commitIdx, l.raft.commitNotifyCh, l.raft.Voters())
 	l.inflight.Reset()
 	l.startReplication()
+	go l.selfVerify()
 	go l.receiveStaging()
+}
+
+func (l *Leader) selfVerify() {
+	if !l.raft.wg.Add(1) {
+		return
+	}
+	defer l.raft.wg.Done()
+	timeout := l.raft.config.LeaderLeaseTimeout
+	timeoutCh := time.After(timeout)
+	for {
+		select {
+		case <-timeoutCh:
+			success, maxSinceContact := l.checkFollowerContacts()
+			if !success {
+				<-l.raft.dispatchTransition(followerStateType, l.getTerm())
+				return
+			}
+			timeout = timeout - maxSinceContact
+			if timeout < minCheckInterval {
+				timeout = minCheckInterval
+			}
+			// reset timeoutCh
+			timeoutCh = time.After(timeout)
+		case <-l.stepdown.Ch():
+			return
+		case <-l.raft.shutdownCh():
+			return
+		}
+	}
+}
+
+func (l *Leader) checkFollowerContacts() (success bool, maxSinceContact time.Duration) {
+	voters := l.raft.Voters()
+	timeout := l.raft.config.LeaderLeaseTimeout
+	contacted := 0
+	l.l.Lock()
+	defer l.l.Unlock()
+	for _, addr := range voters {
+		if addr == l.raft.ID() {
+			contacted++
+			continue
+		}
+		repl, ok := l.replicationMap[addr]
+		if !ok {
+			l.raft.logger.Warn("a voter is not in replication map", "peer", addr)
+			continue
+		}
+		sinceContact := time.Since(repl.lastContact.get())
+		if sinceContact < timeout {
+			contacted++
+			if sinceContact > maxSinceContact {
+				// if we fails to contact, maxSinceContact is increased
+				// to make selfVerify occurs more often
+				maxSinceContact = sinceContact
+			}
+			continue
+		}
+		if sinceContact <= 3*timeout {
+			l.raft.logger.Warn("failed to contact", "peer", addr, "since", sinceContact)
+		} else {
+			l.raft.logger.Debug("failed to contact", "peer", addr, "since", sinceContact)
+		}
+	}
+	if contacted > len(voters)/2 {
+		return true, maxSinceContact
+	}
+	return false, maxSinceContact
 }
 
 func (l *Leader) Stepdown() {

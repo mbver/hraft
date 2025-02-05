@@ -126,6 +126,7 @@ func defaultTestConfig() *Config {
 	return &Config{
 		ElectionTimeout:    100 * time.Millisecond,
 		HeartbeatTimeout:   100 * time.Millisecond,
+		LeaderLeaseTimeout: 100 * time.Millisecond,
 		CommitSyncInterval: 20 * time.Millisecond,
 		MaxAppendEntries:   64,
 		SnapshotThreshold:  8192,

@@ -7,6 +7,7 @@ type Config struct {
 	InitalPeers        []*Peer
 	ElectionTimeout    time.Duration // election timeout is 150-300 ms
 	HeartbeatTimeout   time.Duration
+	LeaderLeaseTimeout time.Duration
 	CommitSyncInterval time.Duration
 	MaxAppendEntries   int
 	SnapshotThreshold  uint64

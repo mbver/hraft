@@ -38,8 +38,10 @@ type peerReplication struct {
 	forceReplicateCh chan chan error
 	verifyL          sync.Mutex
 	verifyRequests   []*verifyLeaderRequest
+	lastContact      *ContactTime
 	// trigger a heartbeat immediately to response for verify leader request
 	pulseCh chan struct{}
+
 	// leader's stepdown control
 	stepdown *ResetableProtectedChan
 	// stopCh fires when the follower is removed from cluster
@@ -164,6 +166,7 @@ func (r *peerReplication) heartbeat() {
 			backoff.next()
 			continue
 		}
+		r.lastContact.setNow()
 		backoff.reset()
 		// resp.Success == false if and only if our term is behind
 		if resp.Term > r.currentTerm {
@@ -218,6 +221,8 @@ func (r *peerReplication) replicate() error {
 			r.waitForBackoff(r.backoff)
 			return err
 		}
+		r.lastContact.setNow()
+
 		if res.Term > r.currentTerm {
 			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
 				r.stepdown.Close() // stop all replication
@@ -294,6 +299,7 @@ func (r *peerReplication) sendLatestSnapshot() error {
 		r.backoff.next()
 		return err
 	}
+	r.lastContact.setNow()
 	if res.Term > req.Term {
 		if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
 			r.stepdown.Close() // stop all replication
@@ -461,6 +467,8 @@ func (r *peerReplication) receivePipelineResponses() {
 				r.raft.logger.Error("failed to read pipeline response", "peer", r.addr, "error", err)
 				return
 			}
+			r.lastContact.setNow()
+
 			if resp.Term > r.currentTerm {
 				r.raft.logger.Info("pipeline response: receiving higher term", "current", r.currentTerm, "received", resp.Term)
 				if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
@@ -513,6 +521,7 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 		updateMatchIdx:     l.commit.updateMatchIdx,
 		logAddedCh:         make(chan struct{}, 1),
 		forceReplicateCh:   make(chan chan error, 1),
+		lastContact:        newContactTime(),
 		pulseCh:            make(chan struct{}, 1),
 		currentTerm:        l.raft.getTerm(),
 		nextIdx:            lastIdx + 1,
