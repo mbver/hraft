@@ -447,7 +447,7 @@ func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
 		r.logger.Info("failed to open snaphot", "name", meta.Name)
 		return
 	}
-	appRestoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
+	appRestoreReq := newAppStateRestoreRequest(meta.Term, meta.Idx, source)
 	select {
 	case r.appstate.restoreReqCh <- appRestoreReq:
 	case <-r.shutdownCh():

@@ -397,7 +397,7 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	}
 	defer source.Close()
 
-	appRestoreReq := newAppStateRestoreReq(meta.Term, meta.Idx, source)
+	appRestoreReq := newAppStateRestoreRequest(meta.Term, meta.Idx, source)
 	select {
 	case l.raft.appstate.restoreReqCh <- appRestoreReq:
 	case <-l.raft.shutdownCh():

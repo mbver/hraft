@@ -29,15 +29,15 @@ func newAppSnapshotRequest() *AppSnapshotRequest {
 	}
 }
 
-type AppStateRestoreReq struct {
+type AppStateRestoreRequest struct {
 	term   uint64
 	idx    uint64
 	source io.ReadCloser
 	errCh  chan error
 }
 
-func newAppStateRestoreReq(term, idx uint64, source io.ReadCloser) *AppStateRestoreReq {
-	return &AppStateRestoreReq{
+func newAppStateRestoreRequest(term, idx uint64, source io.ReadCloser) *AppStateRestoreRequest {
+	return &AppStateRestoreRequest{
 		term:   term,
 		idx:    idx,
 		source: source,
@@ -48,7 +48,7 @@ func newAppStateRestoreReq(term, idx uint64, source io.ReadCloser) *AppStateRest
 type AppState struct {
 	mutateCh        chan []*Commit
 	snapshotReqCh   chan *AppSnapshotRequest
-	restoreReqCh    chan *AppStateRestoreReq
+	restoreReqCh    chan *AppStateRestoreRequest
 	lastAppliedIdx  uint64
 	lastAppliedTerm uint64
 	commandState    CommandsState
@@ -61,7 +61,7 @@ func NewAppState(command CommandsState, membership MembershipApplier) *AppState 
 	return &AppState{
 		mutateCh:        make(chan []*Commit, 128),
 		snapshotReqCh:   make(chan *AppSnapshotRequest),
-		restoreReqCh:    make(chan *AppStateRestoreReq),
+		restoreReqCh:    make(chan *AppStateRestoreRequest),
 		commandState:    command,
 		membershipState: membership,
 		stop:            newProtectedChan(),
