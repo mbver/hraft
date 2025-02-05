@@ -337,6 +337,7 @@ func TestRaft_DemoteVoter(t *testing.T) {
 	for _, v := range voters {
 		require.NotEqual(t, follower0.ID(), v)
 	}
+	sleep()
 	voters = follower0.Voters()
 	for _, v := range voters {
 		require.NotEqual(t, follower0.ID(), v)
