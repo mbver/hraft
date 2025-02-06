@@ -82,6 +82,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		snapshotReqCh:        make(chan *userSnapshotRequest),
 		restoreReqCh:         make(chan *userRestoreRequest),
 		heartbeatTimeout:     newHeartbeatTimeout(b.config.HeartbeatTimeout),
+		observers:            newObserverManager(),
 		wg:                   &ProtectedWaitGroup{},
 		shutdown:             newProtectedChan(),
 		stopTransitionCh:     make(chan struct{}),

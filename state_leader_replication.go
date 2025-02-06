@@ -163,8 +163,12 @@ func (r *peerReplication) heartbeat() {
 		}
 		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
 			r.raft.logger.Error("heartbeat: transport append_entries failed", "peer", r.addr, "error", err)
+			r.raft.observers.observe(HearbeatFailureEvent{r.addr, r.lastContact.get()})
 			backoff.next()
 			continue
+		}
+		if r.backoff.getValue() > 0 {
+			r.raft.observers.observe(HeartbeatResumedEvent{r.addr})
 		}
 		r.lastContact.setNow()
 		backoff.reset()
@@ -535,6 +539,7 @@ func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplicat
 	}
 	go r.run()
 	tryNotify(r.logAddedCh)
+	l.raft.observers.observe(PeerReplicationEvent{r.addr, true})
 	return r
 }
 
@@ -547,6 +552,7 @@ func (l *Leader) stopPeerReplication(addr string) {
 	}
 	close(r.stopCh)
 	delete(l.replicationMap, addr)
+	l.raft.observers.observe(PeerReplicationEvent{r.addr, false})
 }
 
 func (r *peerReplication) addVerifyRequest(req *verifyLeaderRequest) {

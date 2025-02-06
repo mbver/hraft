@@ -235,8 +235,19 @@ func (r *Raft) getEntries(nextIdx, uptoIdx uint64) ([]*Log, error) {
 }
 
 func (r *Raft) dispatchTransition(to RaftStateType, term uint64) chan struct{} {
+	oldState, oldTerm := r.getStateType(), r.getTerm()
 	transition := newTransition(to, term)
 	r.transitionCh <- transition
+	newState, newTerm := r.getStateType(), r.getTerm()
+	if oldState != newState || newTerm > oldTerm {
+		r.observers.observe(
+			StateTransitionEvent{
+				OldState: oldState,
+				OldTerm:  oldTerm,
+				NewState: newState,
+				NewTerm:  newTerm,
+			})
+	}
 	return transition.DoneCh
 }
 
@@ -301,6 +312,8 @@ func (r *Raft) persistVote(term uint64, candidate []byte) error {
 }
 
 func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
+	r.observers.observe(newRequestVoteEvent(req))
+
 	if !r.membership.isLocalVoter() { // non-voter node don't involve request vote
 		return
 	}

@@ -86,6 +86,7 @@ type Raft struct {
 	snapshotReqCh        chan *userSnapshotRequest
 	restoreReqCh         chan *userRestoreRequest
 	heartbeatTimeout     *heartbeatTimeout
+	observers            *observerManager
 	wg                   *ProtectedWaitGroup
 	shutdown             *ProtectedChan
 	stopTransitionCh     chan struct{}

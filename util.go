@@ -248,3 +248,9 @@ func retry(n int, f func() (bool, string)) (success bool, msg string) {
 	}
 	return
 }
+
+func copyBytes(p []byte) []byte {
+	q := make([]byte, len(p))
+	copy(q, p)
+	return q
+}
