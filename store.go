@@ -14,8 +14,6 @@ type LogStore interface {
 	StoreLog(*Log) error
 	StoreLogs([]*Log) error
 	DeleteRange(min, max uint64) error
-	Sync() error
-	Close() error
 }
 
 type KVStore interface {
@@ -23,6 +21,4 @@ type KVStore interface {
 	Get(k []byte) ([]byte, error)
 	SetUint64(k []byte, val uint64) error
 	GetUint64(k []byte) (uint64, error)
-	Sync() error
-	Close() error
 }

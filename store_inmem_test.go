@@ -137,14 +137,6 @@ func (s *inMemKVStore) GetUint64(k []byte) (uint64, error) {
 	return v, nil
 }
 
-func (s *inMemKVStore) Sync() error {
-	return nil
-}
-
-func (s *inMemKVStore) Close() error {
-	return nil
-}
-
 func TestInMemStore_Implement(t *testing.T) {
 	var _ LogStore = (*inMemLogStore)(nil)
 	var _ KVStore = (*inMemKVStore)(nil)
