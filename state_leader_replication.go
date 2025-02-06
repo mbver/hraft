@@ -292,6 +292,7 @@ func (r *peerReplication) sendLatestSnapshot() error {
 
 	req := &InstallSnapshotRequest{
 		Term:        r.currentTerm,
+		Leader:      []byte(r.raft.ID()),
 		LastLogIdx:  meta.Idx,
 		LastLogTerm: meta.Term,
 		Size:        meta.Size,

@@ -86,6 +86,8 @@ type Raft struct {
 	snapshotReqCh        chan *userSnapshotRequest
 	restoreReqCh         chan *userRestoreRequest
 	heartbeatTimeout     *heartbeatTimeout
+	leaderId             string
+	leaderL              sync.RWMutex
 	observers            *observerManager
 	wg                   *ProtectedWaitGroup
 	shutdown             *ProtectedChan
@@ -130,6 +132,7 @@ func (r *Raft) receiveMsgs() {
 		case req := <-r.restoreReqCh:
 			r.getState().HandleRestoreRequest(req)
 		case <-r.heartbeatTimeout.getCh():
+			r.setLeaderId("")
 			if !r.membership.isActive() || !r.membership.isLocalVoter() {
 				r.heartbeatTimeout.reset()
 				warnOnce.Do(func() { r.logger.Warn("membership is unactivated or local node is not voter, skipping election") })
@@ -139,6 +142,7 @@ func (r *Raft) receiveMsgs() {
 		case <-r.heartbeatTimeout.getResetNotifyCh():
 			continue
 		case <-r.shutdownCh():
+			r.setLeaderId("")
 			return
 		}
 	}

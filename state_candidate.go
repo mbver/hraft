@@ -54,6 +54,7 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 		leader.StepUp()
 		c.raft.setStateType(leaderStateType)
 		logFinishTransition(c.raft.logger, trans, candidateStateType, c.getTerm())
+		c.raft.setLeaderId(c.raft.ID())
 	}
 }
 

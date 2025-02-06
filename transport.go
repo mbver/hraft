@@ -72,6 +72,7 @@ type VoteResponse struct {
 }
 type InstallSnapshotRequest struct {
 	Term        uint64
+	Leader      []byte
 	LastLogIdx  uint64
 	LastLogTerm uint64
 	Size        int64
@@ -536,8 +537,7 @@ func (t *NetTransport) handleConn(conn net.Conn) {
 }
 
 func isHeartbeat(req *AppendEntriesRequest) bool {
-	return req.Term != 0 && req.Leader != nil && // SEEMS UNNECESSARY
-		req.PrevLogIdx == 0 && req.PrevLogTerm == 0 &&
+	return req.PrevLogIdx == 0 && req.PrevLogTerm == 0 &&
 		len(req.Entries) == 0 && req.LeaderCommitIdx == 0
 }
 

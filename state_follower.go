@@ -17,6 +17,7 @@ func (f *Follower) HandleTransition(trans *Transition) {
 		if trans.Term <= term {
 			return
 		}
+		f.raft.setLeaderId("") // no leader now
 		f.raft.logger.Info("transitioning to candidate", "transition", trans.String())
 		f.raft.setTerm(trans.Term)
 		candidate := f.raft.getCandidateState()

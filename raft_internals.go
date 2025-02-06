@@ -15,6 +15,20 @@ var (
 	ErrMembershipUnstable = errors.New("membership is unstable")
 )
 
+func (r *Raft) setLeaderId(id string) {
+	r.leaderL.Lock()
+	old := r.leaderId
+	r.leaderId = id
+	r.leaderL.Unlock()
+	if old != id {
+		r.observers.observe(
+			LeaderChangeEvent{
+				OldLeader: old,
+				NewLeader: id,
+			})
+	}
+}
+
 func (r *Raft) handleRPC(rpc *RPC) {
 	switch req := rpc.command.(type) {
 	case *AppendEntriesRequest:
@@ -48,6 +62,7 @@ func (r *Raft) handleAppendEntries(rpc *RPC, req *AppendEntriesRequest) {
 		<-r.dispatchTransition(followerStateType, req.Term)
 		resp.Term = req.Term
 	}
+	r.setLeaderId(string(req.Leader))
 	if !r.checkPrevLog(req.PrevLogIdx, req.PrevLogTerm) {
 		resp.PrevLogCheckFailed = true
 		return
@@ -431,6 +446,7 @@ func (r *Raft) handleInstallSnapshot(rpc *RPC, req *InstallSnapshotRequest) {
 		<-r.dispatchTransition(followerStateType, req.Term)
 		resp.Term = req.Term
 	}
+	r.setLeaderId(string(req.Leader))
 
 	snapshot, err := r.snapstore.CreateSnapshot(req.LastLogIdx, req.LastLogTerm, req.Peers, req.MCommitIdx)
 	if err != nil {

@@ -19,9 +19,7 @@ type RaftEvent interface {
 
 type LeaderChangeEvent struct {
 	OldLeader string
-	OldTerm   string
 	NewLeader string
-	NewTerm   string
 }
 
 func (l LeaderChangeEvent) IsRaftEvent() {}
