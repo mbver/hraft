@@ -48,7 +48,7 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 	require.Nil(t, err)
 	raft := c.getNodesByState(followerStateType)[0]
 	err = <-raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
-	require.Equal(t, ErrNotLeader, err)
+	require.True(t, isErrNotLeader(err))
 }
 
 func TestRaft_Apply_Timeout(t *testing.T) {
@@ -397,7 +397,7 @@ func TestRaft_VerifyLeader_Fail(t *testing.T) {
 
 	err = oldLeader.VerifyLeader(time.Second)
 	require.NotNil(t, err)
-	require.Equal(t, ErrNotLeader, err)
+	require.True(t, isErrNotLeader(err))
 }
 
 func TestRaft_VerifyLeader_PartialDisconnect(t *testing.T) {
@@ -875,7 +875,7 @@ func TestRaft_SelfVerifyFail(t *testing.T) {
 	stepdown, msg := retry(2, func() (bool, string) {
 		time.Sleep(leader.config.LeaderLeaseTimeout)
 		err := leader.VerifyLeader(time.Second)
-		if err != ErrNotLeader {
+		if !isErrNotLeader(err) {
 			return false, "not stepdown"
 		}
 		return true, ""

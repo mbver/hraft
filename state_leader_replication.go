@@ -144,7 +144,9 @@ func (r *peerReplication) waitForHearbeatTrigger() (gotSignal bool) {
 }
 
 func (r *peerReplication) heartbeat() {
-	r.raft.wg.Add(1)
+	if !r.raft.wg.Add(1) {
+		return
+	}
 	defer r.raft.wg.Done()
 	defer r.verifyAll(false)
 	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
@@ -568,6 +570,6 @@ func (r *peerReplication) verifyAll(isLeader bool) {
 	r.verifyRequests = nil
 	r.verifyL.Unlock()
 	for _, req := range reqs {
-		req.confirm(isLeader)
+		req.confirm(isLeader, r.raft.ID())
 	}
 }

@@ -15,6 +15,14 @@ var (
 	ErrMembershipUnstable = errors.New("membership is unstable")
 )
 
+func errNotLeader(id string) error {
+	return fmt.Errorf("%s: %w", id, ErrNotLeader)
+}
+
+func isErrNotLeader(err error) bool {
+	return errors.Is(err, ErrNotLeader)
+}
+
 func (r *Raft) setLeaderId(id string) {
 	r.leaderL.Lock()
 	old := r.leaderId

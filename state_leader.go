@@ -330,7 +330,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 
 func (l *Leader) stepdownOrShutdown() error {
 	if l.stepdown.IsClosed() {
-		return ErrNotLeader
+		return errNotLeader(l.raft.ID())
 	}
 	if l.raft.shutdown.IsClosed() {
 		return ErrRaftShutdown

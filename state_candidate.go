@@ -62,26 +62,26 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 func (c *Candidate) HandleHeartbeatTimeout() {}
 
 func (c *Candidate) HandleApply(a *Apply) {
-	trySend(a.errCh, ErrNotLeader)
+	trySend(a.errCh, errNotLeader(c.raft.ID()))
 }
 
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}
 
 func (c *Candidate) HandleMembershipChange(change *membershipChange) {
-	trySend(change.errCh, ErrNotLeader)
+	trySend(change.errCh, errNotLeader(c.raft.ID()))
 }
 
 func (c *Candidate) HandleRestoreRequest(req *userRestoreRequest) {
-	trySend(req.errCh, ErrNotLeader)
+	trySend(req.errCh, errNotLeader(c.raft.ID()))
 }
 
 func (c *Candidate) HandleLeadershipTransfer(req *leadershipTransfer) {
-	trySend(req.errCh, ErrNotLeader)
+	trySend(req.errCh, errNotLeader(c.raft.ID()))
 }
 
 func (c *Candidate) HandleVerifyLeader(req *verifyLeaderRequest) {
-	trySend(req.errCh, ErrNotLeader)
+	trySend(req.errCh, errNotLeader(c.raft.ID()))
 }
 
 type voteResult struct {

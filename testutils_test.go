@@ -2,6 +2,7 @@ package hraft
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -618,7 +619,7 @@ func drainAndCheckErr(errCh chan error, wantErr error, n int, timeout time.Durat
 	for i := 0; i < n; i++ {
 		select {
 		case err := <-errCh:
-			if err != wantErr {
+			if !errors.Is(err, wantErr) {
 				return err
 			}
 		case <-timeoutCh:

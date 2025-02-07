@@ -112,7 +112,9 @@ func (r *Raft) Shutdown() {
 
 // raft's mainloop
 func (r *Raft) receiveMsgs() {
-	r.wg.Add(1)
+	if !r.wg.Add(1) {
+		return
+	}
 	defer r.wg.Done()
 	warnOnce := sync.Once{}
 	for {
@@ -150,7 +152,9 @@ func (r *Raft) receiveMsgs() {
 
 // fast path for heartbeat msgs
 func (r *Raft) receiveHeartbeat() {
-	r.wg.Add(1)
+	if !r.wg.Add(1) {
+		return
+	}
 	defer r.wg.Done()
 	for {
 		select {
@@ -182,7 +186,9 @@ func (r *Raft) receiveTransitions() {
 }
 
 func (r *Raft) receiveSnapshotRequests() {
-	r.wg.Add(1)
+	if !r.wg.Add(1) {
+		return
+	}
 	defer r.wg.Done()
 	for {
 		select {

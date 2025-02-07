@@ -153,13 +153,16 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 		return err
 	}
 	if err := drainErr(req.errCh, timeoutCh, r.shutdownCh()); err != nil {
-		return err
+		return fmt.Errorf("error waiting for restore applied: %w", err)
 	}
 	noOp := newApply(LogNoOp, nil)
 	if err := sendToRaft(r.applyCh, noOp, timeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
-	return drainErr(noOp.errCh, timeoutCh, r.shutdownCh())
+	if err := drainErr(noOp.errCh, timeoutCh, r.shutdownCh()); err != nil {
+		return fmt.Errorf("error waiting for noOp committed after restore: %w", err)
+	}
+	return nil
 }
 
 type leadershipTransfer struct {
@@ -204,7 +207,7 @@ type verifyLeaderRequest struct {
 	errCh        chan error
 }
 
-func (v *verifyLeaderRequest) confirm(isLeader bool) {
+func (v *verifyLeaderRequest) confirm(isLeader bool, id string) {
 	v.l.Lock()
 	defer v.l.Unlock()
 	if v.done {
@@ -214,7 +217,7 @@ func (v *verifyLeaderRequest) confirm(isLeader bool) {
 	// is stale term
 	if !isLeader {
 		v.done = true
-		trySend(v.errCh, ErrNotLeader)
+		trySend(v.errCh, errNotLeader(id))
 		return
 	}
 	v.numConfirmed++

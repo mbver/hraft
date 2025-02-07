@@ -45,22 +45,22 @@ func (f *Follower) HandleHeartbeatTimeout() {
 }
 
 func (f *Follower) HandleApply(a *Apply) {
-	trySend(a.errCh, ErrNotLeader)
+	trySend(a.errCh, errNotLeader(f.raft.ID()))
 }
 
 func (f *Follower) HandleCommitNotify() {}
 
 func (f *Follower) HandleMembershipChange(change *membershipChange) {
-	trySend(change.errCh, ErrNotLeader)
+	trySend(change.errCh, errNotLeader(f.raft.ID()))
 }
 
 func (f *Follower) HandleRestoreRequest(req *userRestoreRequest) {
-	trySend(req.errCh, ErrNotLeader)
+	trySend(req.errCh, errNotLeader(f.raft.ID()))
 }
 
 func (f *Follower) HandleLeadershipTransfer(req *leadershipTransfer) {
-	trySend(req.errCh, ErrNotLeader)
+	trySend(req.errCh, errNotLeader(f.raft.ID()))
 }
 func (f *Follower) HandleVerifyLeader(req *verifyLeaderRequest) {
-	trySend(req.errCh, ErrNotLeader)
+	trySend(req.errCh, errNotLeader(f.raft.ID()))
 }
