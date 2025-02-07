@@ -489,7 +489,7 @@ func testSnapStoreFromAddr(addr string) (*SnapshotStore, error) {
 	return NewSnapshotStore(baseDir, 3, logger)
 }
 
-func createTestNodeFromAddr(addr string, conf *Config) (*Raft, *BlockableConnGetter, error) {
+func createTestNodeFromAddr(testName string, addr string, conf *Config) (*Raft, *BlockableConnGetter, error) {
 	b := &RaftBuilder{}
 
 	if conf == nil {
@@ -507,7 +507,8 @@ func createTestNodeFromAddr(addr string, conf *Config) (*Raft, *BlockableConnGet
 	}
 	b.WithSnapStore(snapstore)
 
-	b.WithLogger(newTestLogger(addr))
+	logPrefix := fmt.Sprintf("%s: %s", testName, addr)
+	b.WithLogger(newTestLogger(logPrefix))
 	b.WithTransportConfig(testTransportConfigFromAddr(addr))
 	connGetter := newBlockableConnGetter()
 	b.WithConnGetter(connGetter)
@@ -521,7 +522,7 @@ func createTestNodeFromAddr(addr string, conf *Config) (*Raft, *BlockableConnGet
 	return raft, connGetter, nil
 }
 
-func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
+func createTestCluster(testname string, n int, conf *Config) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addresses := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -534,7 +535,7 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
 	var first *Raft
 	for i, addr := range addresses {
-		raft, connGetter, err := createTestNodeFromAddr(addr, conf)
+		raft, connGetter, err := createTestNodeFromAddr(testname, addr, conf)
 		if err != nil {
 			return nil, cleanup, err
 		}
@@ -580,7 +581,7 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 	return cluster, cleanup, nil
 }
 
-func createClusterNoBootStrap(n int, conf *Config) (*cluster, func(), error) {
+func createClusterNoBootStrap(testName string, n int, conf *Config) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addresses := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -592,7 +593,7 @@ func createClusterNoBootStrap(n int, conf *Config) (*cluster, func(), error) {
 	}
 	cleanup := combineCleanup(cluster.close, addrSource.cleanup)
 	for _, addr := range addresses {
-		raft, _, err := createTestNodeFromAddr(addr, conf)
+		raft, _, err := createTestNodeFromAddr(testName, addr, conf)
 		if err != nil {
 			return nil, cleanup, err
 		}
@@ -601,10 +602,10 @@ func createClusterNoBootStrap(n int, conf *Config) (*cluster, func(), error) {
 	return cluster, cleanup, nil
 }
 
-func createTestNode(conf *Config) (*Raft, func(), error) {
+func createTestNode(testName string, conf *Config) (*Raft, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addr := addrSource.next()
-	raft, _, err := createTestNodeFromAddr(addr, conf)
+	raft, _, err := createTestNodeFromAddr(testName, addr, conf)
 	if err != nil {
 		return nil, addrSource.cleanup, err
 	}
