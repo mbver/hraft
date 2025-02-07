@@ -23,6 +23,7 @@ func (r *Raft) setLeaderId(id string) {
 	if old != id {
 		r.observers.observe(
 			LeaderChangeEvent{
+				RaftID:    r.ID(),
 				OldLeader: old,
 				NewLeader: id,
 			})
@@ -257,6 +258,7 @@ func (r *Raft) dispatchTransition(to RaftStateType, term uint64) chan struct{} {
 	if oldState != newState || newTerm > oldTerm {
 		r.observers.observe(
 			StateTransitionEvent{
+				RaftID:   r.ID(),
 				OldState: oldState,
 				OldTerm:  oldTerm,
 				NewState: newState,
@@ -327,7 +329,7 @@ func (r *Raft) persistVote(term uint64, candidate []byte) error {
 }
 
 func (r *Raft) handleRequestVote(rpc *RPC, req *VoteRequest) {
-	r.observers.observe(newRequestVoteEvent(req))
+	r.observers.observe(newRequestVoteEvent(r.ID(), req))
 
 	if !r.membership.isLocalVoter() { // non-voter node don't involve request vote
 		return

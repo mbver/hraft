@@ -18,6 +18,7 @@ type RaftEvent interface {
 }
 
 type LeaderChangeEvent struct {
+	RaftID    string
 	OldLeader string
 	NewLeader string
 }
@@ -25,6 +26,7 @@ type LeaderChangeEvent struct {
 func (l LeaderChangeEvent) IsRaftEvent() {}
 
 type StateTransitionEvent struct {
+	RaftID   string
 	OldState RaftStateType
 	OldTerm  uint64
 	NewState RaftStateType
@@ -34,14 +36,16 @@ type StateTransitionEvent struct {
 func (t StateTransitionEvent) IsRaftEvent() {}
 
 type RequestVoteEvent struct {
+	RaftID      string
 	Term        uint64
 	Candidate   []byte
 	LastLogIdx  uint64
 	LastLogTerm uint64
 }
 
-func newRequestVoteEvent(req *VoteRequest) RequestVoteEvent {
+func newRequestVoteEvent(id string, req *VoteRequest) RequestVoteEvent {
 	return RequestVoteEvent{
+		RaftID:      id,
 		Term:        req.Term,
 		Candidate:   copyBytes(req.Candidate),
 		LastLogIdx:  req.LastLogIdx,
@@ -52,6 +56,7 @@ func newRequestVoteEvent(req *VoteRequest) RequestVoteEvent {
 func (v RequestVoteEvent) IsRaftEvent() {}
 
 type PeerReplicationEvent struct {
+	RaftId string
 	Peer   string
 	Active bool
 }
@@ -59,6 +64,7 @@ type PeerReplicationEvent struct {
 func (p PeerReplicationEvent) IsRaftEvent() {}
 
 type HearbeatFailureEvent struct {
+	RaftID      string
 	Peer        string
 	LastContact time.Time
 }
@@ -66,7 +72,8 @@ type HearbeatFailureEvent struct {
 func (f HearbeatFailureEvent) IsRaftEvent() {}
 
 type HeartbeatResumedEvent struct {
-	Peer string
+	RaftID string
+	Peer   string
 }
 
 func (r HeartbeatResumedEvent) IsRaftEvent() {}
