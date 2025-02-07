@@ -537,13 +537,25 @@ func createTestCluster(n int, conf *Config) (*cluster, func(), error) {
 		cluster.connGetterMap[raft.ID()] = connGetter
 		if i == 0 {
 			first = raft
+			waitCh := waitForNewLeader(raft, time.Second, "", raft.ID())
 			if err := first.Bootstrap(); err != nil {
 				return nil, cleanup, err
 			}
+			if ok := <-waitCh; !ok {
+				return nil, cleanup, fmt.Errorf("failed to become leader after boot strap")
+			}
 			continue
 		}
+		waitReplCh := waitForPeerReplication(first, time.Second, raft.ID())
+		waitLeaderCh := waitForNewLeader(raft, time.Second, "", first.ID())
 		if err := first.AddVoter(addr, 200*time.Millisecond); err != nil {
 			return nil, cleanup, err
+		}
+		if replOk := <-waitReplCh; !replOk {
+			return nil, cleanup, fmt.Errorf("failed to start replication to peer %s", raft.ID())
+		}
+		if leaderOk := <-waitLeaderCh; !leaderOk {
+			return nil, cleanup, fmt.Errorf("failed to have correct leader, expect: %s, got: %s", first.ID(), raft.GetLeaderId())
 		}
 		success, msg := retry(5, func() (bool, string) {
 			time.Sleep(100 * time.Millisecond)
@@ -634,4 +646,53 @@ func checkClusterState(c *cluster) error {
 
 func runAndCollectErr(fn func() error, errCh chan error) {
 	errCh <- fn()
+}
+
+func waitForEvent(r *Raft, waitTimeout time.Duration, acceptFn func(e RaftEvent) bool) (resCh chan bool) {
+	resCh = make(chan bool, 1)
+	eventCh := make(chan RaftEvent)
+	observer, err := NewObserver(eventCh, 0, acceptFn)
+	if err != nil {
+		resCh <- false
+		return
+	}
+	r.RegisterObserver(observer)
+
+	timeoutCh := time.After(waitTimeout)
+	if waitTimeout == 0 {
+		timeoutCh = nil // wait forever!
+	}
+	go func() {
+		defer r.DeregisterObserver(observer.id)
+		for {
+			select {
+			case <-eventCh:
+				resCh <- true
+				return
+			case <-timeoutCh:
+				resCh <- false
+			}
+		}
+	}()
+	return resCh
+}
+
+func waitForNewLeader(r *Raft, waitTimeout time.Duration, oldLeader, newLeader string) chan bool {
+	return waitForEvent(r, waitTimeout, func(e RaftEvent) bool {
+		change, ok := e.(LeaderChangeEvent)
+		if !ok {
+			return false
+		}
+		return change.RaftID == r.ID() && change.OldLeader == oldLeader && change.NewLeader == newLeader
+	})
+}
+
+func waitForPeerReplication(r *Raft, waitTimeout time.Duration, peer string) chan bool {
+	return waitForEvent(r, waitTimeout, func(e RaftEvent) bool {
+		repl, ok := e.(PeerReplicationEvent)
+		if !ok {
+			return false
+		}
+		return repl.Peer == peer && repl.Active
+	})
 }

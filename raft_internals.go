@@ -30,6 +30,12 @@ func (r *Raft) setLeaderId(id string) {
 	}
 }
 
+func (r *Raft) GetLeaderId() string {
+	r.leaderL.Lock()
+	defer r.leaderL.Unlock()
+	return r.leaderId
+}
+
 func (r *Raft) handleRPC(rpc *RPC) {
 	switch req := rpc.command.(type) {
 	case *AppendEntriesRequest:
