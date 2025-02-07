@@ -28,10 +28,13 @@ func TestRaft_AfterShutdown(t *testing.T) {
 	c, cleanup, err := createTestCluster(1, nil)
 	defer cleanup()
 	require.Nil(t, err)
+	leader := c.getNodesByState(leaderStateType)[0]
+	eventCh := waitForNewLeader(leader, leader.ID(), "")
+
 	c.close()
 
-	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
-	leader := c.getNodesByState(leaderStateType)[0]
+	require.True(t, waitEventSuccessful(eventCh))
+
 	err = <-leader.Apply(nil, 0)
 	require.Equal(t, ErrRaftShutdown, err)
 	err = leader.AddVoter("127.0.0.1:7946", 0)
@@ -120,8 +123,11 @@ func TestRaft_RemoveFollower(t *testing.T) {
 	follower0 := c.getNodesByState(followerStateType)[0]
 	follower1 := c.getNodesByState(followerStateType)[1]
 
+	eventCh := waitPeerReplicationStop(leader, follower0.ID())
 	err = leader.RemovePeer(follower0.ID(), 500*time.Millisecond)
 	require.Nil(t, err)
+
+	require.True(t, waitEventSuccessful(eventCh))
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -218,8 +224,12 @@ func TestRaft_RemoveLeader(t *testing.T) {
 
 	leader := c.getNodesByState(leaderStateType)[0]
 
+	eventCh := waitForNewLeader(leader, leader.ID(), "")
 	err = leader.RemovePeer(leader.ID(), 500*time.Millisecond)
 	require.Nil(t, err)
+
+	require.True(t, waitEventSuccessful(eventCh))
+
 	time.Sleep(200 * time.Millisecond)
 	require.Equal(t, followerStateType, leader.getStateType(), fmt.Sprintf("wrong state type: %s", leader.getStateType()))
 

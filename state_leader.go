@@ -159,6 +159,7 @@ func (l *Leader) HandleTransition(trans *Transition) {
 			l.raft.setTerm(trans.Term)
 			l.raft.setStateType(followerStateType)
 			logFinishTransition(l.raft.logger, trans, leaderStateType, term)
+			l.raft.setLeaderId("")
 		}
 	}
 }
