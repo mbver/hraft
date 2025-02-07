@@ -153,14 +153,18 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 		return err
 	}
 	if err := drainErr(req.errCh, timeoutCh, r.shutdownCh()); err != nil {
-		return fmt.Errorf("error waiting for restore applied: %w", err)
+		return fmt.Errorf("%s error waiting for restore applied: %w", r.ID(), err)
 	}
+	// force follower to install snapshot.
+	// if noOp failed to commit, the leader is unable to enforce consistent state
+	// on majority of nodes. it might already loose leadership.
+	// the snapshot is not accepted in the cluster.
 	noOp := newApply(LogNoOp, nil)
 	if err := sendToRaft(r.applyCh, noOp, timeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
 	if err := drainErr(noOp.errCh, timeoutCh, r.shutdownCh()); err != nil {
-		return fmt.Errorf("error waiting for noOp committed after restore: %w", err)
+		return fmt.Errorf("%s error waiting for noOp committed after restore: %w", r.ID(), err)
 	}
 	return nil
 }

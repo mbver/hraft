@@ -642,13 +642,24 @@ func applyAndCheck(leader *Raft, n int, offset int, wantErr error) error {
 }
 
 func checkClusterState(c *cluster) error {
-	if n := len(c.getNodesByState(leaderStateType)); n != 1 {
-		return fmt.Errorf("expect 1 leader but got %d", n)
+	// highly concurrent tests can exhaust CPUs and the leader may fail to heartbeat.
+	// the delay after cluster created and the check may be enough that the cluster state
+	// is changed by the time of checking. sometimes, there is no leader and sometimes no followers!
+	nLeader := len(c.getNodesByState(leaderStateType))
+	nFollower := len(c.getNodesByState(followerStateType))
+	nCandidate := len(c.getNodesByState(candidateStateType))
+	if nLeader == 1 && nFollower == len(c.rafts)-1 && nCandidate == 0 {
+		return nil
 	}
-	if n := len(c.getNodesByState(followerStateType)); n != len(c.rafts)-1 {
-		return fmt.Errorf("expect %d followers but got %d", len(c.rafts)-1, n)
+	addr := ""
+	for _, r := range c.rafts {
+		addr = r.ID()
+		break
 	}
-	return nil
+	return fmt.Errorf(
+		"unexpected cluster %s state: leader: %d, follower: %d, candidate: %d",
+		addr, nLeader, nFollower, nCandidate,
+	)
 }
 
 func runAndCollectErr(fn func() error, errCh chan error) {
