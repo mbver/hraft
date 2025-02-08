@@ -719,6 +719,16 @@ func waitPeerReplicationStop(r *Raft, peer string) chan RaftEvent {
 	})
 }
 
+func waitForHeartbeatResumed(r *Raft, peer string) chan RaftEvent {
+	return waitForEvent(r, func(e RaftEvent) bool {
+		res, ok := e.(HeartbeatResumedEvent)
+		if !ok {
+			return false
+		}
+		return res.RaftID == r.ID() && peer == res.Peer
+	})
+}
+
 func waitEventSuccessful(ch chan RaftEvent) bool {
 	select {
 	case <-ch:

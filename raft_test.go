@@ -151,7 +151,10 @@ func TestRaft_LeaderFailed(t *testing.T) {
 	err = <-errCh
 	require.Nil(t, err)
 
+	resumeHeartbeatCh := waitForHeartbeatResumed(leader, oldLeader.ID())
 	c.unPartition(oldLeader.ID())
+
+	require.True(t, waitEventSuccessful(resumeHeartbeatCh))
 
 	consistent, msg = c.isConsistent()
 	require.True(t, consistent, msg)
