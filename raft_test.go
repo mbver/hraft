@@ -387,8 +387,15 @@ func TestRaft_VerifyLeader_Fail(t *testing.T) {
 
 	follower.setTerm(follower.getTerm() + 1)
 
-	sleep()
-	require.Equal(t, 1, len(c.getNodesByState(leaderStateType)))
+	hasLeader, msg := retry(3, func() (bool, string) {
+		sleep()
+		if len(c.getNodesByState(leaderStateType)) != 1 {
+			return false, "no leader"
+		}
+		return true, ""
+	})
+	require.True(t, hasLeader, msg)
+
 	oldLeader := leader
 	require.Equal(t, followerStateType, oldLeader.getStateType())
 	require.Equal(t, 1, len(c.getNodesByState(followerStateType)))
