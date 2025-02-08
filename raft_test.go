@@ -160,6 +160,33 @@ func TestRaft_LeaderFailed(t *testing.T) {
 	require.True(t, consistent, msg)
 }
 
+func TestRaft_BehindFollowerReconnect(t *testing.T) {
+	t.Parallel()
+	conf := defaultTestConfig()
+	// conf.HeartbeatTimeout = 500 * time.Millisecond
+	conf.NumTrailingLogs = 10
+	c, cleanup, err := createTestCluster("SendLatestSnapshotAndLogs", 3, conf)
+	defer cleanup()
+	require.Nil(t, err)
+
+	behindFo := c.getNodesByState(followerStateType)[0]
+	c.partition(behindFo.ID())
+
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	err = applyAndCheck(leader, 100, 0, nil)
+	require.Nil(t, err)
+
+	c.unPartition(behindFo.ID())
+
+	consistent, msg = retry(3, c.isConsistent)
+	require.True(t, consistent, msg)
+
+	require.Nil(t, checkClusterState(c))
+}
+
 func TestRaft_RemoveFollower(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster("RemoveFollower", 3, nil)
