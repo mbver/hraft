@@ -564,7 +564,7 @@ func createTestCluster(testname string, n int, conf *Config) (*cluster, func(), 
 		if !waitEventSuccessful(waitLeaderCh) {
 			return nil, cleanup, fmt.Errorf("failed to have correct leader, expect: %s, got: %s", first.ID(), raft.GetLeaderId())
 		}
-		success, msg := retry(5, func() (bool, string) {
+		success, msg := retry(10, func() (bool, string) {
 			time.Sleep(100 * time.Millisecond)
 			if raft.membership.isLocalVoter() {
 				return true, ""
@@ -623,7 +623,7 @@ func drainAndCheckErr(errCh chan error, wantErr error, n int, timeout time.Durat
 				return err
 			}
 		case <-timeoutCh:
-			return fmt.Errorf("timeout")
+			return fmt.Errorf("timeout drain and check error %d/%d received", i, n)
 		}
 	}
 	return nil
@@ -637,8 +637,11 @@ func applyAndCheck(leader *Raft, n int, offset int, wantErr error) error {
 		errChs[i] = errCh
 	}
 	go func() {
-		for _, errCh := range errChs {
+		for i, errCh := range errChs {
 			err := <-errCh
+			if err != nil {
+				err = fmt.Errorf("errApply, i=%d: %w", i, err)
+			}
 			collectErrCh <- err
 		}
 	}()

@@ -605,11 +605,9 @@ func TestRaft_UserRestore(t *testing.T) {
 			conf.HeartbeatTimeout = 500 * time.Millisecond
 			conf.ElectionTimeout = 500 * time.Millisecond
 
-			// for 120 available addresses and 8 CPUs, if we run a lot of subtests
-			// (like 600), the tests have to wait for those started to finish.
-			// because this test is IO heavy, we can run more than 8 subtests in parallel but
-			// not much more than that.
-			// so 120 available addresses are never exhausted.
+			// if we run a lot of subtests in parallel
+			// (like 600), 120 available ips are exhausted.
+			// NextAvailAddr will block waiting for used ips to be returned.
 			c, cleanup, err := createTestCluster("UserRestore", 3, conf)
 			defer cleanup()
 			require.Nil(t, err)
