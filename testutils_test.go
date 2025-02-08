@@ -609,6 +609,10 @@ func createClusterNoBootStrap(testName string, n int, conf *Config) (*cluster, f
 		}
 		cluster.add(raft)
 	}
+	followers := cluster.getNodesByState(followerStateType)
+	if len(followers) != n {
+		return nil, cleanup, fmt.Errorf("not enough follower %d/%d", len(followers), n)
+	}
 	return cluster, cleanup, nil
 }
 

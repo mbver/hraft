@@ -163,8 +163,6 @@ func TestRaft_LeaderFailed(t *testing.T) {
 func TestRaft_BehindFollowerReconnect(t *testing.T) {
 	t.Parallel()
 	conf := defaultTestConfig()
-	// conf.HeartbeatTimeout = 500 * time.Millisecond
-	conf.NumTrailingLogs = 10
 	c, cleanup, err := createTestCluster("BehindFollowerReconnect", 3, conf)
 	defer cleanup()
 	require.Nil(t, err)
@@ -185,6 +183,39 @@ func TestRaft_BehindFollowerReconnect(t *testing.T) {
 	require.True(t, consistent, msg)
 
 	require.Nil(t, checkClusterState(c))
+}
+
+func TestRaft_AddNonVoter(t *testing.T) {
+	t.Parallel()
+	conf := defaultTestConfig()
+	c, cleanup, err := createTestCluster("AddNonVoter", 3, conf)
+	defer cleanup()
+	require.Nil(t, err)
+
+	c1, cleanup1, err := createClusterNoBootStrap("AddNonVoter", 1, conf)
+	defer cleanup1()
+	require.Nil(t, err)
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	outsider := c1.getNodesByState(followerStateType)[0]
+
+	require.Equal(t, 3, len(leader.Voters()))
+	require.Equal(t, RoleAbsent, leader.membership.getPeer(outsider.ID()))
+	waitReplCh := waitForPeerReplication(leader, outsider.ID())
+	waitLeaderCh := waitForNewLeader(outsider, "", leader.ID())
+
+	err = leader.AddNonVoter(outsider.ID(), time.Second)
+	require.Nil(t, err)
+	require.True(t, waitEventSuccessful(waitReplCh))
+	require.True(t, waitEventSuccessful(waitLeaderCh))
+	require.Equal(t, 3, len(leader.Voters()))
+	require.Equal(t, RoleNonVoter, leader.membership.getPeer(outsider.ID()))
+
+	c.add(outsider)
+	err = applyAndCheck(leader, 100, 0, nil)
+	require.Nil(t, err)
+	consistent, msg := retry(3, c.isConsistent)
+	require.True(t, consistent, msg)
 }
 
 func TestRaft_RemoveFollower(t *testing.T) {
