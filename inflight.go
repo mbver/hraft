@@ -2,8 +2,11 @@ package hraft
 
 import (
 	"container/list"
+	"errors"
 	"sync"
 )
+
+var ErrLeaderStepdown = errors.New("leader stepdown")
 
 type inflight struct {
 	l    sync.Mutex
@@ -25,5 +28,8 @@ func (f *inflight) Front() *list.Element {
 func (f *inflight) Reset() {
 	f.l.Lock()
 	defer f.l.Unlock()
+	for e := f.list.Front(); e != nil; e = e.Next() {
+		e.Value.(*Apply).errCh <- ErrLeaderStepdown
+	}
 	f.list = list.New()
 }
