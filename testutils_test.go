@@ -523,12 +523,18 @@ func createTestNodeFromAddr(testName string, addr string, conf *Config) (*Raft, 
 	return raft, connGetter, nil
 }
 
+// used for debug in parallel tests
+func errWithAddr(addr string, err error) error {
+	return fmt.Errorf("%s:%w", addr, err)
+}
+
 func createTestCluster(testname string, n int, conf *Config) (*cluster, func(), error) {
 	addrSource := newTestAddressesWithSameIP()
 	addresses := make([]string, n)
 	for i := 0; i < n; i++ {
 		addresses[i] = addrSource.next()
 	}
+	addr0 := addresses[0] // used to debug in parallel tests
 	cluster := &cluster{
 		rafts:         map[string]*Raft{},
 		connGetterMap: map[string]*BlockableConnGetter{},
@@ -538,7 +544,7 @@ func createTestCluster(testname string, n int, conf *Config) (*cluster, func(), 
 	for i, addr := range addresses {
 		raft, connGetter, err := createTestNodeFromAddr(testname, addr, conf)
 		if err != nil {
-			return nil, cleanup, err
+			return nil, cleanup, errWithAddr(addr0, err)
 		}
 		cluster.add(raft)
 		cluster.connGetterMap[raft.ID()] = connGetter
@@ -546,23 +552,23 @@ func createTestCluster(testname string, n int, conf *Config) (*cluster, func(), 
 			first = raft
 			eventCh := waitForNewLeader(raft, "", raft.ID())
 			if err := first.Bootstrap(); err != nil {
-				return nil, cleanup, err
+				return nil, cleanup, errWithAddr(addr0, fmt.Errorf("bootstrap: %w", err))
 			}
 			if !waitEventSuccessful(eventCh) {
-				return nil, cleanup, fmt.Errorf("failed to transition to leader in bootstrap")
+				return nil, cleanup, errWithAddr(addr0, fmt.Errorf("failed to transition to leader in bootstrap"))
 			}
 			continue
 		}
 		waitReplCh := waitForPeerReplication(first, raft.ID())
 		waitLeaderCh := waitForNewLeader(raft, "", first.ID())
 		if err := first.AddVoter(addr, 200*time.Millisecond); err != nil {
-			return nil, cleanup, err
+			return nil, cleanup, errWithAddr(addr0, fmt.Errorf("addvoter: %w", err))
 		}
 		if !waitEventSuccessful(waitReplCh) {
-			return nil, cleanup, fmt.Errorf("failed to start replication to peer %s", raft.ID())
+			return nil, cleanup, errWithAddr(addr0, fmt.Errorf("failed to start replication to peer %s", raft.ID()))
 		}
 		if !waitEventSuccessful(waitLeaderCh) {
-			return nil, cleanup, fmt.Errorf("failed to have correct leader, expect: %s, got: %s", first.ID(), raft.GetLeaderId())
+			return nil, cleanup, errWithAddr(addr0, fmt.Errorf("failed to have correct leader, expect: %s, got: %s", first.ID(), raft.GetLeaderId()))
 		}
 		success, msg := retry(10, func() (bool, string) {
 			time.Sleep(100 * time.Millisecond)
@@ -572,12 +578,12 @@ func createTestCluster(testname string, n int, conf *Config) (*cluster, func(), 
 			return false, "unable to become voter: " + raft.ID()
 		})
 		if !success {
-			return nil, cleanup, fmt.Errorf("%s", msg)
+			return nil, cleanup, errWithAddr(addr0, fmt.Errorf("%s", msg))
 		}
 	}
 	sleep()
 	if err := checkClusterState(cluster); err != nil {
-		return nil, cleanup, err
+		return nil, cleanup, errWithAddr(addr0, err)
 	}
 	return cluster, cleanup, nil
 }

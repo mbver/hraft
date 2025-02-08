@@ -230,8 +230,8 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	logs := make([]*Log, n)
 	l.inflight.l.Lock()
 	for idx, a := range applies {
-		a.dispatchedAt = now     // DO WE NEED THIS?
-		a.log.DispatchedAt = now // CONSIDER SKIPPING?
+		a.dispatchedAt = now
+		a.log.DispatchedAt = now
 		lastIndex++
 		a.log.Idx = lastIndex
 		a.log.Term = term
@@ -249,7 +249,7 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 		<-l.raft.dispatchTransition(followerStateType, l.getTerm())
 		return
 	}
-	l.commit.updateMatchIdx(l.raft.ID(), lastIndex) // ======= lastIdx is increased by applies.
+	l.commit.updateMatchIdx(l.raft.ID(), lastIndex) // lastIdx is incremented above
 
 	// Update the last log since it's on disk now
 	l.raft.instate.setLastLog(lastIndex, term)
