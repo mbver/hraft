@@ -181,11 +181,14 @@ func (c *cluster) partition(addrs ...string) {
 			}
 		}
 	}
-	for _, addr := range addrs {
-		r := c.rafts[addr]
+
+	// close all connections outside of the pool in each node
+	// they will re-establish the needed connection later which cause
+	// a neligible delay for tests.
+	// this is required to stop the running pipeline and force leader
+	// to switch back to replicate mode and use the blocked ConnGetter
+	for _, r := range c.rafts {
 		r.logger.Debug("[PARTITION], closed all received conns", "id", r.ID())
-		// this is to stop the running pipeline and force leader
-		// to switch back to replicate mode and use the blocked ConnGetter
 		r.transport.ClearReceivedConns()
 	}
 }

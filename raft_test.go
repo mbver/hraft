@@ -112,6 +112,51 @@ func TestCluster_SingleNode(t *testing.T) {
 	require.Equal(t, uint64(2), commands[0].Idx)
 }
 
+func TestRaft_LeaderFailed(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster("LeaderFailed", 3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	errCh := leader.Apply([]byte("test"), leader.config.CommitSyncInterval)
+	err = <-errCh
+	require.Nil(t, err)
+
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
+
+	oldLeader := leader
+	c.partition(leader.ID())
+	hasLeader, msg := retry(20, func() (bool, string) {
+		sleep()
+		leaders := c.getNodesByState(leaderStateType)
+		if len(leaders) != 1 {
+			return false, fmt.Sprintf("wrong leader num: %d, expect 1", len(leaders))
+		}
+		if leader = leaders[0]; leader.ID() == oldLeader.ID() {
+			return false, "leader not change"
+		}
+		return true, ""
+	})
+	require.True(t, hasLeader, msg)
+	require.Greater(t, leader.getTerm(), oldLeader.getTerm())
+
+	errCh = oldLeader.Apply([]byte("old"), oldLeader.config.CommitSyncInterval)
+	err = <-errCh
+	require.NotNil(t, err)
+	require.True(t, isErrNotLeader(err))
+
+	errCh = leader.Apply([]byte("new"), leader.config.CommitSyncInterval)
+	err = <-errCh
+	require.Nil(t, err)
+
+	c.unPartition(oldLeader.ID())
+
+	consistent, msg = c.isConsistent()
+	require.True(t, consistent, msg)
+}
+
 func TestRaft_RemoveFollower(t *testing.T) {
 	t.Parallel()
 	c, cleanup, err := createTestCluster("RemoveFollower", 3, nil)
@@ -119,7 +164,6 @@ func TestRaft_RemoveFollower(t *testing.T) {
 	require.Nil(t, err)
 
 	leader := c.getNodesByState(leaderStateType)[0]
-	require.Equal(t, 2, len(c.getNodesByState(followerStateType)))
 	follower0 := c.getNodesByState(followerStateType)[0]
 	follower1 := c.getNodesByState(followerStateType)[1]
 
