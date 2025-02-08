@@ -71,22 +71,22 @@ func (l *Leader) selfVerify() {
 		return
 	}
 	defer l.raft.wg.Done()
-	timeout := l.raft.config.LeaderLeaseTimeout
-	timeoutCh := time.After(timeout)
+	checkInterval := l.raft.config.LeaderLeaseTimeout
+	checkCh := time.After(checkInterval)
 	for {
 		select {
-		case <-timeoutCh:
+		case <-checkCh:
 			success, maxSinceContact := l.checkFollowerContacts()
 			if !success {
 				<-l.raft.dispatchTransition(followerStateType, l.getTerm())
 				return
 			}
-			timeout = timeout - maxSinceContact
-			if timeout < minCheckInterval {
-				timeout = minCheckInterval
+			checkInterval = checkInterval - maxSinceContact
+			if checkInterval < minCheckInterval {
+				checkInterval = minCheckInterval
 			}
-			// reset timeoutCh
-			timeoutCh = time.After(timeout)
+			// reset checkCh
+			checkCh = time.After(checkInterval)
 		case <-l.stepdown.Ch():
 			return
 		case <-l.raft.shutdownCh():

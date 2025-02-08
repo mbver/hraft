@@ -604,11 +604,18 @@ func TestRaft_UserRestore(t *testing.T) {
 			conf := defaultTestConfig()
 			conf.HeartbeatTimeout = 500 * time.Millisecond
 			conf.ElectionTimeout = 500 * time.Millisecond
-
+			// starvation and delay can occasionally make heartbeat response
+			// arrive much later. if LeaderLeaseTimeout is 100ms and HeartbeatTimeout is 500ms
+			// hearbeat interval is 50ms, very close to LeaderLeaseTimeout.
+			// LeaderLeaseTimeout can be exceeded by some delay and
+			// selfVerify will force leader to stepdown. It is more likely to happen in the middle
+			// when leader tries to install snapshot on followers
+			// before noOp is committed. noOp timeout is the resuting error.
+			conf.LeaderLeaseTimeout = 500 * time.Millisecond
 			// if we run a lot of subtests in parallel
 			// (like 600), 120 available ips are exhausted.
 			// NextAvailAddr will block waiting for used ips to be returned.
-			c, cleanup, err := createTestCluster("UserRestore", 3, conf)
+			c, cleanup, err := createTestCluster(fmt.Sprintf("UserRestore, offset=%d", offset), 3, conf)
 			defer cleanup()
 			require.Nil(t, err)
 
