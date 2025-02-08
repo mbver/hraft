@@ -165,7 +165,7 @@ func TestRaft_BehindFollowerReconnect(t *testing.T) {
 	conf := defaultTestConfig()
 	// conf.HeartbeatTimeout = 500 * time.Millisecond
 	conf.NumTrailingLogs = 10
-	c, cleanup, err := createTestCluster("SendLatestSnapshotAndLogs", 3, conf)
+	c, cleanup, err := createTestCluster("BehindFollowerReconnect", 3, conf)
 	defer cleanup()
 	require.Nil(t, err)
 
