@@ -177,7 +177,6 @@ func (r *peerReplication) heartbeat() {
 		// resp.Success == false if and only if our term is behind
 		if resp.Term > r.currentTerm {
 			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
-				r.stepdown.Close() // stop all replication
 				<-r.raft.dispatchTransition(followerStateType, resp.Term)
 			}
 			return
@@ -231,7 +230,6 @@ func (r *peerReplication) replicate() error {
 
 		if res.Term > r.currentTerm {
 			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
-				r.stepdown.Close() // stop all replication
 				<-r.raft.dispatchTransition(followerStateType, res.Term)
 			}
 			return nil
@@ -309,7 +307,6 @@ func (r *peerReplication) sendLatestSnapshot() error {
 	r.lastContact.setNow()
 	if res.Term > req.Term {
 		if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
-			r.stepdown.Close() // stop all replication
 			<-r.raft.dispatchTransition(followerStateType, res.Term)
 		}
 		return fmt.Errorf("stale term: current: %d, received: %d", r.currentTerm, res.Term)
@@ -479,7 +476,6 @@ func (r *peerReplication) receivePipelineResponses() {
 			if resp.Term > r.currentTerm {
 				r.raft.logger.Info("pipeline response: receiving higher term", "current", r.currentTerm, "received", resp.Term)
 				if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
-					r.stepdown.Close()
 					<-r.raft.dispatchTransition(followerStateType, resp.Term)
 				}
 				return
