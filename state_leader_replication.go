@@ -149,14 +149,16 @@ func (r *peerReplication) heartbeat() {
 	}
 	defer r.raft.wg.Done()
 	defer r.verifyAll(false)
-	backoff := newBackoff(10*time.Millisecond, 41*time.Second)
+	// this is very easily confused with r.backoff, which is used in replicate
+	// so name it with a 💓
+	hBackoff := newBackoff(10*time.Millisecond, 41*time.Second)
 	req := AppendEntriesRequest{
 		Term:   r.currentTerm,
 		Leader: []byte(r.raft.ID()),
 	}
 	var resp AppendEntriesResponse
 	for {
-		if !r.waitForBackoff(backoff) {
+		if !r.waitForBackoff(hBackoff) {
 			return
 		}
 		// Wait for the next heartbeat interval or pulse (forced-heartbeat)
@@ -166,14 +168,14 @@ func (r *peerReplication) heartbeat() {
 		if err := r.raft.transport.AppendEntries(r.addr, &req, &resp); err != nil {
 			r.raft.logger.Error("heartbeat: transport append_entries failed", "peer", r.addr, "error", err)
 			r.raft.observers.observe(HearbeatFailureEvent{r.raft.ID(), r.addr, r.lastContact.get()})
-			backoff.next()
+			hBackoff.next() // it gets slower nearing the crush 💔
 			continue
 		}
-		if r.backoff.getValue() > 0 {
+		if hBackoff.getValue() > 0 {
 			r.raft.observers.observe(HeartbeatResumedEvent{r.raft.ID(), r.addr})
 		}
 		r.lastContact.setNow()
-		backoff.reset()
+		hBackoff.reset()
 		// resp.Success == false if and only if our term is behind
 		if resp.Term > r.currentTerm {
 			if !r.stepdown.IsClosed() && r.raft.getTerm() == r.currentTerm {
