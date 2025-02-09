@@ -84,9 +84,9 @@ type EventFilterFn func(e RaftEvent) bool
 type Observer struct {
 	nObserved uint64
 	nDropped  uint64
+	ch        chan RaftEvent
 	// to wait for event sent down the channel.
 	// set it to enormous value can block raft!
-	ch       chan RaftEvent
 	timeout  time.Duration
 	acceptFn EventFilterFn
 	id       uint64
