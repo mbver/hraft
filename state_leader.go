@@ -71,7 +71,7 @@ func (l *Leader) selfVerify() {
 		return
 	}
 	defer l.raft.wg.Done()
-	checkInterval := l.raft.config.LeaderLeaseTimeout
+	checkInterval := l.raft.getConfig().LeaderLeaseTimeout
 	checkCh := time.After(checkInterval)
 	for {
 		select {
@@ -97,7 +97,7 @@ func (l *Leader) selfVerify() {
 
 func (l *Leader) checkFollowerContacts() (success bool, maxSinceContact time.Duration) {
 	voters := l.raft.Voters()
-	timeout := l.raft.config.LeaderLeaseTimeout
+	timeout := l.raft.getConfig().LeaderLeaseTimeout
 	contacted := 0
 	l.l.Lock()
 	defer l.l.Unlock()
@@ -183,7 +183,7 @@ func (l *Leader) HandleCommitNotify() {
 		l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
 	}
 
-	batchSize := l.raft.config.MaxAppendEntries
+	batchSize := l.raft.getConfig().MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
 	// handle logs after stepping up
 	l.inflight.l.Lock()
@@ -268,7 +268,7 @@ func (l *Leader) HandleApply(a *ApplyRequest) {
 		a.errCh <- ErrLeadershipTransferInProgress
 		return
 	}
-	batchSize := l.raft.config.MaxAppendEntries
+	batchSize := l.raft.getConfig().MaxAppendEntries
 	batch := make([]*ApplyRequest, 0, batchSize)
 	batch = append(batch, a)
 	hasApplies := true

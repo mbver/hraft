@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	hclog "github.com/hashicorp/go-hclog"
 )
@@ -63,7 +64,7 @@ type State interface {
 }
 
 type Raft struct {
-	config               *Config
+	config               atomic.Value
 	logger               hclog.Logger
 	appstate             *AppState
 	membership           *membership
@@ -200,7 +201,7 @@ func (r *Raft) receiveSnapshotRequests() {
 				}
 			}
 			req.errCh <- err
-		case <-jitterTimeoutCh((r.config.SnapshotInterval)):
+		case <-jitterTimeoutCh((r.getConfig().SnapshotInterval)):
 			if !r.shouldSnapshot() {
 				continue
 			}

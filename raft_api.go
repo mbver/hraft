@@ -101,7 +101,7 @@ func (r *Raft) Bootstrap() error { // TODO: timeout is in config?
 	}
 	peers := []*Peer{{r.ID(), RoleVoter}}
 	r.membership.setLatest(peers, 0)
-	checkInterval := (r.config.HeartbeatTimeout + r.config.ElectionTimeout + 10*time.Millisecond) / 4
+	checkInterval := (r.getConfig().HeartbeatTimeout + r.getConfig().ElectionTimeout + 10*time.Millisecond) / 4
 	success, msg := retry(8, func() (bool, string) {
 		<-time.After(checkInterval)
 		if r.getStateType() != leaderStateType {
@@ -205,7 +205,7 @@ func (r *Raft) TransferLeadership(addr string, timeout time.Duration) error {
 	if err := drainErr(transfer.errCh, drainTimeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}
-	<-time.After(r.config.ElectionTimeout)
+	<-time.After(r.getConfig().ElectionTimeout)
 	if r.getStateType() != followerStateType {
 		return fmt.Errorf("leader does not stepdown")
 	}
@@ -274,4 +274,17 @@ func (r *Raft) Barrier(timeout time.Duration) error {
 		return err
 	}
 	return drainErr(apply.errCh, timeoutCh, r.shutdownCh())
+}
+
+func (r *Raft) ReloadConfig(s ReloadableSubConfig) error {
+	newConf := r.getConfig().mergeReloadableSubConfig(s)
+	if err := validateConfig(newConf); err != nil {
+		return err
+	}
+	r.setConfig(newConf)
+	return nil
+}
+
+func (r *Raft) GetReloadableSubConfig() ReloadableSubConfig {
+	return r.getConfig().getReloadableSubConfig()
 }

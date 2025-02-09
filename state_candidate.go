@@ -147,7 +147,7 @@ func (c *Candidate) runElection() {
 	// collecting votes
 	voteGranted := 0
 	voteNeeded := len(c.getVoters())/2 + 1
-	electionTimeoutCh := jitterTimeoutCh(c.raft.config.ElectionTimeout)
+	electionTimeoutCh := jitterTimeoutCh(c.raft.getConfig().ElectionTimeout)
 	for voteGranted < voteNeeded {
 		select {
 		case vote := <-voteCh:

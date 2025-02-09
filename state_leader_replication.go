@@ -520,8 +520,8 @@ func (l *Leader) startReplication() {
 func (l *Leader) startPeerReplication(addr string, lastIdx uint64) *peerReplication {
 	r := &peerReplication{
 		raft:               l.raft,
-		commitSyncInterval: l.raft.config.CommitSyncInterval,
-		heartbeatTimeout:   l.raft.config.HeartbeatTimeout,
+		commitSyncInterval: l.raft.getConfig().CommitSyncInterval,
+		heartbeatTimeout:   l.raft.getConfig().HeartbeatTimeout,
 		addr:               addr,
 		updateMatchIdx:     l.commit.updateMatchIdx,
 		logAddedCh:         make(chan struct{}, 1),

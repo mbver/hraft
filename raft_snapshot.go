@@ -9,7 +9,7 @@ func (r *Raft) shouldSnapshot() bool {
 		r.logger.Error("failed to get last log index", "error", err)
 		return false
 	}
-	return lastLogIdx-lastSnapIdx > r.config.SnapshotThreshold
+	return lastLogIdx-lastSnapIdx > r.getConfig().SnapshotThreshold
 }
 
 func (r *Raft) compactLogs(snapIdx uint64) error {
@@ -18,7 +18,7 @@ func (r *Raft) compactLogs(snapIdx uint64) error {
 		return fmt.Errorf("failed to get first log index: %w", err)
 	}
 	lastIdx, _ := r.getLastLog()
-	numTrailing := r.config.NumTrailingLogs
+	numTrailing := r.getConfig().NumTrailingLogs
 	if firstIdx+numTrailing > lastIdx { // don't use minus for uint64!
 		return nil
 	}

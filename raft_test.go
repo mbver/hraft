@@ -47,7 +47,7 @@ func TestRaft_ApplyNonLeader(t *testing.T) {
 	defer cleanup()
 	require.Nil(t, err)
 	raft := c.getNodesByState(followerStateType)[0]
-	err = <-raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
+	err = <-raft.Apply([]byte("test"), raft.getConfig().HeartbeatTimeout)
 	require.True(t, isErrNotLeader(err))
 }
 
@@ -104,7 +104,7 @@ func TestCluster_SingleNode(t *testing.T) {
 	require.Nil(t, err)
 
 	raft := c.getNodesByState(leaderStateType)[0]
-	err = <-raft.Apply([]byte("test"), raft.config.HeartbeatTimeout)
+	err = <-raft.Apply([]byte("test"), raft.getConfig().HeartbeatTimeout)
 	require.Nil(t, err)
 	commands := getRecordCommandState(raft)
 	require.Equal(t, 1, len(commands))
@@ -119,7 +119,7 @@ func TestRaft_LeaderFailed(t *testing.T) {
 	require.Nil(t, err)
 
 	leader := c.getNodesByState(leaderStateType)[0]
-	errCh := leader.Apply([]byte("test"), leader.config.CommitSyncInterval)
+	errCh := leader.Apply([]byte("test"), leader.getConfig().CommitSyncInterval)
 	err = <-errCh
 	require.Nil(t, err)
 
@@ -142,12 +142,12 @@ func TestRaft_LeaderFailed(t *testing.T) {
 	require.True(t, hasLeader, msg)
 	require.Greater(t, leader.getTerm(), oldLeader.getTerm())
 
-	errCh = oldLeader.Apply([]byte("old"), oldLeader.config.CommitSyncInterval)
+	errCh = oldLeader.Apply([]byte("old"), oldLeader.getConfig().CommitSyncInterval)
 	err = <-errCh
 	require.NotNil(t, err)
 	require.True(t, isErrNotLeader(err))
 
-	errCh = leader.Apply([]byte("new"), leader.config.CommitSyncInterval)
+	errCh = leader.Apply([]byte("new"), leader.getConfig().CommitSyncInterval)
 	err = <-errCh
 	require.Nil(t, err)
 
@@ -995,7 +995,7 @@ func TestRaft_SelfVerifyFail(t *testing.T) {
 	c.partition(follower.ID())
 
 	stepdown, msg := retry(2, func() (bool, string) {
-		time.Sleep(leader.config.LeaderLeaseTimeout)
+		time.Sleep(leader.getConfig().LeaderLeaseTimeout)
 		err := leader.VerifyLeader(time.Second)
 		if !isErrNotLeader(err) {
 			return false, "not stepdown"
@@ -1031,4 +1031,26 @@ func TestRaft_Barrier(t *testing.T) {
 
 	commands := getRecordCommandState(leader)
 	require.Equal(t, 100, len(commands))
+}
+
+func TestRaft_ReloadConfig(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster("RemoveFollower", 3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	r := c.getNodesByState(leaderStateType)[0]
+
+	require.Equal(t, uint64(8192), r.getConfig().SnapshotThreshold)
+	require.Equal(t, 120*time.Second, r.getConfig().SnapshotInterval)
+	require.Equal(t, uint64(10240), r.getConfig().NumTrailingLogs)
+
+	sub := ReloadableSubConfig{
+		SnapshotThreshold: 6789,
+		SnapshotInterval:  234 * time.Second,
+		NumTrailingLogs:   12345,
+	}
+	require.Nil(t, r.ReloadConfig(sub))
+	require.Equal(t, uint64(6789), r.getConfig().SnapshotThreshold)
+	require.Equal(t, 234*time.Second, r.getConfig().SnapshotInterval)
+	require.Equal(t, uint64(12345), r.getConfig().NumTrailingLogs)
 }

@@ -1,8 +1,6 @@
 package hraft
 
 import (
-	"fmt"
-
 	hclog "github.com/hashicorp/go-hclog"
 )
 
@@ -50,8 +48,8 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 }
 
 func (b *RaftBuilder) Build() (*Raft, error) {
-	if !validateConfig(b.config) {
-		return nil, fmt.Errorf("invalid config")
+	if err := validateConfig(*b.config); err != nil {
+		return nil, err
 	}
 
 	trans, err := NewNetTransport(b.transportConfig, b.logger, b.connGetter)
@@ -60,7 +58,6 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 	}
 
 	raft := &Raft{
-		config:               b.config,
 		logger:               b.logger,
 		appstate:             b.appState,
 		membership:           newMembership(b.config.LocalID),
@@ -88,6 +85,7 @@ func (b *RaftBuilder) Build() (*Raft, error) {
 		stopTransitionCh:     make(chan struct{}),
 		transitionStopDoneCh: make(chan struct{}),
 	}
+	raft.setConfig(*b.config)
 	raft.stateMap = NewStateMap(raft)
 	go raft.receiveMsgs()
 	go raft.receiveHeartbeat()

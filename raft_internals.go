@@ -200,7 +200,7 @@ func (r *Raft) handleNewLeaderCommit(idx uint64) {
 		r.logger.Warn("ignore old applied logs", "idx", idx)
 		return
 	}
-	batchSize := r.config.MaxAppendEntries
+	batchSize := r.getConfig().MaxAppendEntries
 	batch := make([]*Commit, 0, batchSize)
 	for i := lastApplied + 1; i <= idx; i++ {
 		l := &Log{}
@@ -250,7 +250,7 @@ func (r *Raft) getPrevLog(nextIdx uint64) (idx, term uint64, err error) {
 }
 
 func (r *Raft) getEntries(nextIdx, uptoIdx uint64) ([]*Log, error) {
-	size := r.config.MaxAppendEntries
+	size := r.getConfig().MaxAppendEntries
 	entries := make([]*Log, 0, size)
 	maxIdx := min(nextIdx-1+uint64(size), uptoIdx)
 	for i := nextIdx; i <= maxIdx; i++ {
