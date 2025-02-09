@@ -264,3 +264,14 @@ func (r *Raft) VerifyLeader(timeout time.Duration) error {
 func (r *Raft) LastLeaderContact() time.Time {
 	return r.leaderContact.get()
 }
+
+// Barrier commits do not mutate application state.
+// When it is notified, it means all preceding commits applied.
+func (r *Raft) Barrier(timeout time.Duration) error {
+	timeoutCh := getTimeoutCh(timeout)
+	apply := newApply(LogBarrier, nil)
+	if err := sendToRaft(r.applyCh, apply, timeoutCh, r.shutdownCh()); err != nil {
+		return err
+	}
+	return drainErr(apply.errCh, timeoutCh, r.shutdownCh())
+}

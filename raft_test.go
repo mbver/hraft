@@ -1013,3 +1013,22 @@ func TestRaft_SelfVerifyFail(t *testing.T) {
 	// no further contact
 	require.Equal(t, lastContact, follower.LastLeaderContact())
 }
+
+func TestRaft_Barrier(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster("RemoveFollower", 3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+
+	leader := c.getNodesByState(leaderStateType)[0]
+	for i := 0; i < 100; i++ {
+		leader.Apply([]byte(fmt.Sprintf("test %d", i)), 0)
+	}
+	err = leader.Barrier(time.Second)
+	require.Nil(t, err)
+	consistent, msg := c.isConsistent()
+	require.True(t, consistent, msg)
+
+	commands := getRecordCommandState(leader)
+	require.Equal(t, 100, len(commands))
+}

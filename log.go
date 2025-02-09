@@ -8,6 +8,7 @@ const (
 	LogCommand LogType = iota
 	LogMembership
 	LogNoOp
+	LogBarrier
 )
 
 func (t LogType) String() string {
@@ -18,6 +19,8 @@ func (t LogType) String() string {
 		return "log_membership"
 	case LogNoOp:
 		return "log_no_op"
+	case LogBarrier:
+		return "log_barrier"
 	}
 	return "unknown_log_type"
 }

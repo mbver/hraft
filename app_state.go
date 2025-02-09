@@ -84,6 +84,18 @@ func (a *AppState) Stop() {
 	<-a.doneCh
 }
 
+func (a *AppState) applyBatchCommands(batch []*Commit) {
+	if len(batch) == 0 {
+		return
+	}
+	a.commandState.ApplyCommands(batch)
+	for _, applied := range batch {
+		trySend(applied.ErrCh, nil)
+	}
+	last := batch[len(batch)-1]
+	a.setLastApplied(last.Log.Idx, last.Log.Term)
+}
+
 func (a *AppState) receiveMutations() {
 	batchSize := a.commandState.BatchSize()
 	for {
@@ -94,13 +106,14 @@ func (a *AppState) receiveMutations() {
 				if c.Log.Type == LogCommand {
 					batch = append(batch, c)
 					if len(batch) == batchSize {
-						a.commandState.ApplyCommands(batch)
-						for _, applied := range batch {
-							trySend(applied.ErrCh, nil)
-						}
-						a.setLastApplied(c.Log.Idx, c.Log.Term)
+						a.applyBatchCommands(batch)
 						batch = make([]*Commit, 0, batchSize)
 					}
+				}
+				if c.Log.Type == LogBarrier {
+					a.applyBatchCommands(batch)
+					batch = make([]*Commit, 0)
+					trySend(c.ErrCh, nil)
 				}
 				if c.Log.Type == LogMembership {
 					a.membershipState.ApplyMembership(c)
@@ -108,22 +121,16 @@ func (a *AppState) receiveMutations() {
 					a.setLastApplied(c.Log.Idx, c.Log.Term)
 				}
 			}
-			if len(batch) > 0 {
-				a.commandState.ApplyCommands(batch)
-				for _, applied := range batch {
-					trySend(applied.ErrCh, nil)
-				}
-				last := batch[len(batch)-1]
-				a.setLastApplied(last.Log.Idx, last.Log.Term)
-			}
+			// apply the partially filled batch
+			a.applyBatchCommands(batch)
 		case req := <-a.snapshotReqCh:
 			req.idx, req.term = a.getLastApplied()
 			req.writeToSnapshotFn = a.commandState.WriteToSnapshot
-			req.errCh <- nil
+			trySend(req.errCh, nil)
 		case req := <-a.restoreReqCh:
 			defer req.source.Close()
 			err := a.commandState.Restore(req.source)
-			req.errCh <- err
+			trySend(req.errCh, err)
 			a.setLastApplied(req.idx, req.term)
 		case <-a.stop.ch:
 			a.doneCh <- struct{}{}
