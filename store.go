@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// Copyright (c) 2025 Phuoc Phi
+// SPDX-License-Identifier: MPL-2.0
 package hraft
 
 import "errors"
