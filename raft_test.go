@@ -1054,3 +1054,26 @@ func TestRaft_ReloadConfig(t *testing.T) {
 	require.Equal(t, 234*time.Second, r.getConfig().SnapshotInterval)
 	require.Equal(t, uint64(12345), r.getConfig().NumTrailingLogs)
 }
+
+func TestRaft_ReloadConfig_Invalid(t *testing.T) {
+	t.Parallel()
+	c, cleanup, err := createTestCluster("RemoveFollower", 3, nil)
+	defer cleanup()
+	require.Nil(t, err)
+	r := c.getNodesByState(leaderStateType)[0]
+
+	require.Equal(t, uint64(8192), r.getConfig().SnapshotThreshold)
+	require.Equal(t, 120*time.Second, r.getConfig().SnapshotInterval)
+	require.Equal(t, uint64(10240), r.getConfig().NumTrailingLogs)
+
+	sub := ReloadableSubConfig{
+		SnapshotThreshold: 6789,
+		SnapshotInterval:  1 * time.Millisecond,
+		NumTrailingLogs:   12345,
+	}
+	require.NotNil(t, r.ReloadConfig(sub))
+
+	require.Equal(t, uint64(8192), r.getConfig().SnapshotThreshold)
+	require.Equal(t, 120*time.Second, r.getConfig().SnapshotInterval)
+	require.Equal(t, uint64(10240), r.getConfig().NumTrailingLogs)
+}
