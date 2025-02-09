@@ -103,19 +103,18 @@ func (a *AppState) receiveMutations() {
 		case commits := <-a.mutateCh:
 			batch := make([]*Commit, 0, batchSize)
 			for _, c := range commits {
-				if c.Log.Type == LogCommand {
+				switch c.Log.Type {
+				case LogCommand:
 					batch = append(batch, c)
 					if len(batch) == batchSize {
 						a.applyBatchCommands(batch)
 						batch = make([]*Commit, 0, batchSize)
 					}
-				}
-				if c.Log.Type == LogBarrier {
+				case LogBarrier:
 					a.applyBatchCommands(batch)
 					batch = make([]*Commit, 0)
 					trySend(c.ErrCh, nil)
-				}
-				if c.Log.Type == LogMembership {
+				case LogMembership:
 					a.membershipState.ApplyMembership(c)
 					trySend(c.ErrCh, nil)
 					a.setLastApplied(c.Log.Idx, c.Log.Term)
