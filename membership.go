@@ -255,21 +255,21 @@ func (t membershipChageType) String() string {
 	return "unknown membershipt change"
 }
 
-type membershipChange struct {
+type membershipChangeRequest struct {
 	addr       string
 	changeType membershipChageType
 	errCh      chan error
 }
 
-func newMembershipChange(addr string, changeType membershipChageType) *membershipChange {
-	return &membershipChange{
+func newMembershipChangeRequest(addr string, changeType membershipChageType) *membershipChangeRequest {
+	return &membershipChangeRequest{
 		addr:       addr,
 		changeType: changeType,
 		errCh:      make(chan error, 1),
 	}
 }
 
-func (m *membership) newPeersFromChange(change *membershipChange) ([]*Peer, error) {
+func (m *membership) newPeersFromChange(change *membershipChangeRequest) ([]*Peer, error) {
 	latest, _ := m.getLatest()
 	switch change.changeType {
 	case addStaging:

@@ -44,13 +44,13 @@ func (f *Follower) HandleHeartbeatTimeout() {
 	<-f.raft.dispatchTransition(candidateStateType, term)
 }
 
-func (f *Follower) HandleApply(a *Apply) {
+func (f *Follower) HandleApply(a *ApplyRequest) {
 	trySend(a.errCh, errNotLeader(f.raft.ID()))
 }
 
 func (f *Follower) HandleCommitNotify() {}
 
-func (f *Follower) HandleMembershipChange(change *membershipChange) {
+func (f *Follower) HandleMembershipChange(change *membershipChangeRequest) {
 	trySend(change.errCh, errNotLeader(f.raft.ID()))
 }
 
@@ -58,7 +58,7 @@ func (f *Follower) HandleRestoreRequest(req *userRestoreRequest) {
 	trySend(req.errCh, errNotLeader(f.raft.ID()))
 }
 
-func (f *Follower) HandleLeadershipTransfer(req *leadershipTransfer) {
+func (f *Follower) HandleLeadershipTransfer(req *leadershipTransferRequest) {
 	trySend(req.errCh, errNotLeader(f.raft.ID()))
 }
 func (f *Follower) HandleVerifyLeader(req *verifyLeaderRequest) {

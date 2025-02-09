@@ -177,7 +177,7 @@ func (l *Leader) HandleCommitNotify() {
 		return
 	}
 	// handle logs from previous leader
-	firstIdx := first.Value.(*Apply).log.Idx
+	firstIdx := first.Value.(*ApplyRequest).log.Idx
 	lastApplied := l.raft.instate.getLastApplied()
 	if firstIdx-1 > lastApplied {
 		l.raft.handleNewLeaderCommit(min(firstIdx-1, commitIdx))
@@ -190,7 +190,7 @@ func (l *Leader) HandleCommitNotify() {
 	var next *list.Element
 	for e := first; e != nil; e = next {
 		next = e.Next()
-		a := e.Value.(*Apply)
+		a := e.Value.(*ApplyRequest)
 		if a.log.Idx > commitIdx {
 			break
 		}
@@ -221,7 +221,7 @@ func (l *Leader) HandleCommitNotify() {
 	}
 }
 
-func (l *Leader) dispatchApplies(applies []*Apply) {
+func (l *Leader) dispatchApplies(applies []*ApplyRequest) {
 	now := time.Now()
 	term := l.getTerm()
 	lastIndex, _ := l.raft.instate.getLastIdxTerm()
@@ -262,14 +262,14 @@ func (l *Leader) dispatchApplies(applies []*Apply) {
 	l.l.Unlock()
 }
 
-func (l *Leader) HandleApply(a *Apply) {
+func (l *Leader) HandleApply(a *ApplyRequest) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring an apply request. leadership is transferring...")
 		a.errCh <- ErrLeadershipTransferInProgress
 		return
 	}
 	batchSize := l.raft.config.MaxAppendEntries
-	batch := make([]*Apply, 0, batchSize)
+	batch := make([]*ApplyRequest, 0, batchSize)
 	batch = append(batch, a)
 	hasApplies := true
 	for len(batch) < batchSize && hasApplies {
@@ -283,7 +283,7 @@ func (l *Leader) HandleApply(a *Apply) {
 	l.dispatchApplies(batch)
 }
 
-func (l *Leader) HandleMembershipChange(change *membershipChange) {
+func (l *Leader) HandleMembershipChange(change *membershipChangeRequest) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring a membership change request. leadership transferring...")
 		change.errCh <- ErrLeadershipTransferInProgress
@@ -310,7 +310,7 @@ func (l *Leader) HandleMembershipChange(change *membershipChange) {
 	if change.changeType == bootstrap {
 		l.commit.updateVoters(l.raft.membership.getVoters())
 	}
-	l.dispatchApplies([]*Apply{{
+	l.dispatchApplies([]*ApplyRequest{{
 		log:   log,
 		errCh: change.errCh,
 	}})
@@ -360,7 +360,7 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 	var next *list.Element
 	for e := l.inflight.list.Front(); e != nil; e = next {
 		next = e.Next()
-		e.Value.(*Apply).errCh <- ErrAbortedByRestore
+		e.Value.(*ApplyRequest).errCh <- ErrAbortedByRestore
 		l.inflight.list.Remove(e)
 	}
 	l.inflight.l.Unlock()
@@ -417,7 +417,7 @@ func (l *Leader) restoreSnapshot(meta *SnapshotMeta, source io.ReadCloser) error
 
 var ErrLeadershipTransferInProgress = errors.New("leadership transfer is in progress")
 
-func (l *Leader) HandleLeadershipTransfer(req *leadershipTransfer) {
+func (l *Leader) HandleLeadershipTransfer(req *leadershipTransferRequest) {
 	if l.inLeadershipTransfer.Load() {
 		l.raft.logger.Debug("ignoring leadership transfer request. leadership transfer is in progress")
 		trySend(req.errCh, ErrLeadershipTransferInProgress)

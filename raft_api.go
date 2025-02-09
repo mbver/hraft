@@ -27,14 +27,14 @@ func (r *Raft) StagingPeer() string {
 	return r.membership.getStaging()
 }
 
-type Apply struct {
+type ApplyRequest struct {
 	log          *Log
 	errCh        chan error
 	dispatchedAt time.Time
 }
 
-func newApply(logType LogType, cmd []byte) *Apply {
-	return &Apply{
+func newApply(logType LogType, cmd []byte) *ApplyRequest {
+	return &ApplyRequest{
 		log: &Log{
 			Type: logType,
 			Data: cmd,
@@ -53,7 +53,7 @@ func (r *Raft) Apply(cmd []byte, timeout time.Duration) chan error {
 }
 
 func (r *Raft) AddVoter(addr string, timeout time.Duration) error {
-	m := newMembershipChange(addr, addStaging)
+	m := newMembershipChangeRequest(addr, addStaging)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
 		return err
@@ -62,7 +62,7 @@ func (r *Raft) AddVoter(addr string, timeout time.Duration) error {
 }
 
 func (r *Raft) AddNonVoter(addr string, timeout time.Duration) error {
-	m := newMembershipChange(addr, addNonVoter)
+	m := newMembershipChangeRequest(addr, addNonVoter)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
 		return err
@@ -71,7 +71,7 @@ func (r *Raft) AddNonVoter(addr string, timeout time.Duration) error {
 }
 
 func (r *Raft) RemovePeer(addr string, timeout time.Duration) error {
-	m := newMembershipChange(addr, removePeer)
+	m := newMembershipChangeRequest(addr, removePeer)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
 		return err
@@ -80,7 +80,7 @@ func (r *Raft) RemovePeer(addr string, timeout time.Duration) error {
 }
 
 func (r *Raft) DemoteVoter(addr string, timeout time.Duration) error {
-	m := newMembershipChange(addr, demotePeer)
+	m := newMembershipChangeRequest(addr, demotePeer)
 	timeoutCh := getTimeoutCh(timeout)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
 		return err
@@ -112,7 +112,7 @@ func (r *Raft) Bootstrap() error { // TODO: timeout is in config?
 	if !success {
 		return fmt.Errorf("%s", msg)
 	}
-	m := newMembershipChange("", bootstrap)
+	m := newMembershipChangeRequest("", bootstrap)
 	timeoutCh := getTimeoutCh(time.Second)
 	if err := sendToRaft(r.membershipChangeCh, m, timeoutCh, r.shutdownCh()); err != nil {
 		return err
@@ -178,14 +178,14 @@ func (r *Raft) Restore(meta *SnapshotMeta, source io.ReadCloser, timeout time.Du
 	return nil
 }
 
-type leadershipTransfer struct {
+type leadershipTransferRequest struct {
 	addr      string
 	timeoutCh <-chan time.Time
 	errCh     chan error
 }
 
-func newLeadershipTransfer(addr string, timeoutCh <-chan time.Time) *leadershipTransfer {
-	return &leadershipTransfer{
+func newLeadershipTransferRequest(addr string, timeoutCh <-chan time.Time) *leadershipTransferRequest {
+	return &leadershipTransferRequest{
 		addr:      addr,
 		timeoutCh: timeoutCh,
 		errCh:     make(chan error, 1),
@@ -194,7 +194,7 @@ func newLeadershipTransfer(addr string, timeoutCh <-chan time.Time) *leadershipT
 
 func (r *Raft) TransferLeadership(addr string, timeout time.Duration) error {
 	timeoutCh := getTimeoutCh(timeout)
-	transfer := newLeadershipTransfer(addr, timeoutCh)
+	transfer := newLeadershipTransferRequest(addr, timeoutCh)
 	if err := sendToRaft(r.leadershipTransferCh, transfer, timeoutCh, r.shutdownCh()); err != nil {
 		return err
 	}

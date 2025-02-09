@@ -29,7 +29,7 @@ func (f *inflight) Reset() {
 	f.l.Lock()
 	defer f.l.Unlock()
 	for e := f.list.Front(); e != nil; e = e.Next() {
-		e.Value.(*Apply).errCh <- ErrLeaderStepdown
+		e.Value.(*ApplyRequest).errCh <- ErrLeaderStepdown
 	}
 	f.list = list.New()
 }

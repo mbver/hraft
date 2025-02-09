@@ -67,7 +67,7 @@ func (l *Leader) receiveLogSynced() {
 			if l.stepdown.IsClosed() || l.raft.shutdown.IsClosed() {
 				return
 			}
-			m := newMembershipChange(l.staging.getId(), promotePeer)
+			m := newMembershipChangeRequest(l.staging.getId(), promotePeer)
 			l.raft.membershipChangeCh <- m
 			err := <-m.errCh
 			if err == ErrMembershipUnstable { // keep promote peer until successful or stopped

@@ -532,9 +532,9 @@ func (r *Raft) hasExistingState() (bool, error) {
 	return false, nil
 }
 
-func sendToRaft[T *Apply |
-	*membershipChange |
-	*leadershipTransfer |
+func sendToRaft[T *ApplyRequest |
+	*membershipChangeRequest |
+	*leadershipTransferRequest |
 	*userSnapshotRequest |
 	*userRestoreRequest |
 	*verifyLeaderRequest](

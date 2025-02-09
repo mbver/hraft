@@ -54,11 +54,11 @@ func (t *Transition) String() string {
 type State interface {
 	HandleTransition(*Transition)
 	HandleHeartbeatTimeout()
-	HandleApply(*Apply)
+	HandleApply(*ApplyRequest)
 	HandleCommitNotify()
-	HandleMembershipChange(*membershipChange)
+	HandleMembershipChange(*membershipChangeRequest)
 	HandleRestoreRequest(*userRestoreRequest)
-	HandleLeadershipTransfer(*leadershipTransfer)
+	HandleLeadershipTransfer(*leadershipTransferRequest)
 	HandleVerifyLeader(*verifyLeaderRequest)
 }
 
@@ -76,10 +76,10 @@ type Raft struct {
 	transport            *NetTransport
 	heartbeatCh          chan *RPC
 	rpchCh               chan *RPC
-	applyCh              chan *Apply
+	applyCh              chan *ApplyRequest
 	commitNotifyCh       chan struct{}
-	membershipChangeCh   chan *membershipChange
-	leadershipTransferCh chan *leadershipTransfer
+	membershipChangeCh   chan *membershipChangeRequest
+	leadershipTransferCh chan *leadershipTransferRequest
 	leaderContact        *ContactTime
 	verifyLeaderCh       chan *verifyLeaderRequest
 	transitionCh         chan *Transition

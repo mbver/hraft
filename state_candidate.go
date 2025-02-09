@@ -61,14 +61,14 @@ func (c *Candidate) HandleTransition(trans *Transition) {
 // heartbeat timeout is blocked in candidate state
 func (c *Candidate) HandleHeartbeatTimeout() {}
 
-func (c *Candidate) HandleApply(a *Apply) {
+func (c *Candidate) HandleApply(a *ApplyRequest) {
 	trySend(a.errCh, errNotLeader(c.raft.ID()))
 }
 
 // will never be called
 func (c *Candidate) HandleCommitNotify() {}
 
-func (c *Candidate) HandleMembershipChange(change *membershipChange) {
+func (c *Candidate) HandleMembershipChange(change *membershipChangeRequest) {
 	trySend(change.errCh, errNotLeader(c.raft.ID()))
 }
 
@@ -76,7 +76,7 @@ func (c *Candidate) HandleRestoreRequest(req *userRestoreRequest) {
 	trySend(req.errCh, errNotLeader(c.raft.ID()))
 }
 
-func (c *Candidate) HandleLeadershipTransfer(req *leadershipTransfer) {
+func (c *Candidate) HandleLeadershipTransfer(req *leadershipTransferRequest) {
 	trySend(req.errCh, errNotLeader(c.raft.ID()))
 }
 
