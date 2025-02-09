@@ -376,7 +376,6 @@ func (a *recordCommandState) ApplyCommands(commits []*Commit) {
 	defer a.l.Unlock()
 	for _, c := range commits {
 		a.commands = append(a.commands, c.Log)
-		trySend(c.ErrCh, nil)
 	}
 }
 
@@ -432,7 +431,6 @@ func (a *recordMembershipApplier) ApplyMembership(c *Commit) {
 	a.l.Lock()
 	defer a.l.Unlock()
 	a.logs = append(a.logs, c.Log)
-	trySend(c.ErrCh, nil)
 }
 
 func getRecordMembershipState(r *Raft) []*Log {

@@ -95,17 +95,24 @@ func (a *AppState) receiveMutations() {
 					batch = append(batch, c)
 					if len(batch) == batchSize {
 						a.commandState.ApplyCommands(batch)
+						for _, applied := range batch {
+							trySend(applied.ErrCh, nil)
+						}
 						a.setLastApplied(c.Log.Idx, c.Log.Term)
 						batch = make([]*Commit, 0, batchSize)
 					}
 				}
 				if c.Log.Type == LogMembership {
 					a.membershipState.ApplyMembership(c)
+					trySend(c.ErrCh, nil)
 					a.setLastApplied(c.Log.Idx, c.Log.Term)
 				}
 			}
 			if len(batch) > 0 {
 				a.commandState.ApplyCommands(batch)
+				for _, applied := range batch {
+					trySend(applied.ErrCh, nil)
+				}
 				last := batch[len(batch)-1]
 				a.setLastApplied(last.Log.Idx, last.Log.Term)
 			}
