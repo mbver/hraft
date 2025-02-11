@@ -138,6 +138,9 @@ func (r *Raft) receiveMsgs() {
 		case req := <-r.restoreReqCh:
 			r.getState().HandleRestoreRequest(req)
 		case <-r.heartbeatTimeout.getCh():
+			if tryGetNotify(r.heartbeatTimeout.getResetNotifyCh()) { // heartbeatTimeout is reset, use the freshest
+				continue
+			}
 			r.setLeaderId("")
 			if !r.membership.isActive() || !r.membership.isLocalVoter() {
 				r.heartbeatTimeout.reset()
@@ -145,7 +148,7 @@ func (r *Raft) receiveMsgs() {
 				continue
 			}
 			r.getState().HandleHeartbeatTimeout()
-		case <-r.heartbeatTimeout.getResetNotifyCh():
+		case <-r.heartbeatTimeout.getResetNotifyCh(): // heartbeat is reset, use the freshest
 			continue
 		case <-r.shutdownCh():
 			r.setLeaderId("")
