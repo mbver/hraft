@@ -4,6 +4,8 @@
 package hraft
 
 import (
+	"fmt"
+
 	hclog "github.com/hashicorp/go-hclog"
 )
 
@@ -53,6 +55,10 @@ func (b *RaftBuilder) WithLogger(logger hclog.Logger) {
 func (b *RaftBuilder) Build() (*Raft, error) {
 	if err := validateConfig(*b.config); err != nil {
 		return nil, err
+	}
+
+	if b.appState.commandState.BatchSize() <= 0 {
+		return nil, fmt.Errorf("application state's batchsize must be positive")
 	}
 
 	trans, err := NewNetTransport(b.transportConfig, b.logger, b.connGetter)
